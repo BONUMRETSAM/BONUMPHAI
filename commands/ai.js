@@ -7,8 +7,8 @@ const SERPAPI_KEY = '96a606904519013f159fa59fca23892e38a305ea97159d1b2a77ea71364
 
 module.exports = {
   name: ['ai', 'opera', 'ask', 'gemini', 'vision', 'gscholar', 'scholar', 'googlescholar', 'research', 'generate', 'image', 'img', 'show'],
-  description: 'Multi-modal AI with text, image analysis, Google Scholar, image generation, and music search',
-  usage: 'ai [message] or send/reply to image or generate [query] or play [song]',
+  description: 'Multi-modal AI with text, image analysis, Google Scholar, image generation, music search, and lyrics',
+  usage: 'ai [message] or send/reply to image or generate [query] or play [song] or lyrics [song]',
   version: '3.0.0',
   author: 'codex',
   category: 'AI',
@@ -21,6 +21,11 @@ module.exports = {
       let isReply = false;
       let previousPrompt = null;
       let imageUrl = null;
+
+      if (this.isLyricsRequest(prompt)) {
+        await this.handleLyricsSearch(senderId, prompt, token);
+        return;
+      }
 
       if (this.isRealtimeQuestion(prompt)) {
         await this.handleRealtimeQuestion(senderId, prompt, token);
@@ -85,7 +90,7 @@ module.exports = {
 
       if (!prompt && !isReply && !imageUrl) {
         await sendMessage(senderId, {
-          text: 'Hello! I am Teacher Arlene - Multi-Modal AI.\n\nCapabilities:\nText conversations\nImage analysis\nAcademic research\nImage generation\nMusic search\nTranslation\nSummarization\n\nCommands:\nai [question]\nSend an image for analysis\ngenerate [search term] [number]\ngscholar [search query]\nplay [song title]'
+          text: 'Hello! I am Teacher Arlene - Multi-Modal AI.\n\nCapabilities:\nText conversations\nImage analysis\nAcademic research\nImage generation\nMusic search\nLyrics search\nTranslation\nSummarization\n\nCommands:\nai [question]\nSend an image for analysis\ngenerate [search term] [number]\ngscholar [search query]\nplay [song title]\nlyrics [song title] by [artist]'
         }, token);
         return;
       }
@@ -138,7 +143,118 @@ module.exports = {
     }
   },
 
-  
+  isLyricsRequest(prompt) {
+    const lower = prompt.toLowerCase();
+    const keywords = ['lyrics', 'lyric', 'letra', 'kanta', 'song lyrics', 'lyrics of', 'lyrics ng', 'letra ng', 'lyrics for', 'lyrics to', 'kanta ni', 'song lyrics of', 'full lyrics', 'complete lyrics', 'lyrics and chords', 'chords and lyrics'];
+    return keywords.some(k => lower.includes(k));
+  },
+
+  async handleLyricsSearch(senderId, prompt, token) {
+    let searchTerm = prompt;
+    const removeKeywords = ['lyrics', 'lyric', 'letra', 'kanta', 'song lyrics', 'lyrics of', 'lyrics ng', 'letra ng', 'lyrics for', 'lyrics to', 'kanta ni', 'song lyrics of', 'full lyrics', 'complete lyrics', 'lyrics and chords', 'chords and lyrics'];
+
+    for (const keyword of removeKeywords) {
+      if (searchTerm.toLowerCase().includes(keyword)) {
+        searchTerm = searchTerm.toLowerCase().replace(keyword, '').trim();
+        break;
+      }
+    }
+
+    let title = searchTerm;
+    let artist = '';
+    const parts = searchTerm.split(/\s+by\s+|\s+-\s+|\s+of\s+|\s+ng\s+|\s+ni\s+/i);
+    if (parts.length > 1) {
+      title = parts[0].trim();
+      artist = parts[1].trim();
+    }
+
+    if (!title) {
+      await sendMessage(senderId, { 
+        text: 'Lyrics Search\n\nUsage: lyrics [song title] by [artist]\n\nExamples:\nlyrics lihim by arthur miguel\nletra ng lihim\nkanta ni arthur miguel\n\nFeatures:\nShows complete lyrics\nVerse, Chorus, Bridge, Adlibs\nArtist and title included\n100% accurate from API' 
+      }, token);
+      return;
+    }
+
+    try {
+      let query = title;
+      if (artist) query += ` ${artist}`;
+      const encodedQuery = encodeURIComponent(query);
+      const apiUrl = `https://api-library-kohi-production.up.railway.app/api/lyrics?query=${encodedQuery}`;
+      
+      const response = await axios.get(apiUrl, {
+        timeout: 15000,
+        headers: { 'Accept': 'application/json' }
+      });
+
+      const data = response.data;
+      if (!data.status || !data.data) {
+        await sendMessage(senderId, { 
+          text: `No lyrics found for "${title}".\n\nTry:\n- Check spelling\n- Add artist name\n- Use format: lyrics [title] by [artist]` 
+        }, token);
+        return;
+      }
+
+      const lyricsData = data.data;
+      const songTitle = lyricsData.title || title;
+      const songArtist = lyricsData.artist || artist || 'Unknown Artist';
+      const lyrics = lyricsData.lyrics || 'Lyrics not available.';
+
+      // Format lyrics with sections
+      let formattedLyrics = this.formatLyrics(lyrics);
+
+      let message = `🎵 ${songTitle}\n`;
+      message += `👤 Artist: ${songArtist}\n\n`;
+      message += `${formattedLyrics}\n\n`;
+      message += `✅ Complete lyrics\n`;
+      message += `🕐 ${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`;
+
+      await this.sendChunks(senderId, message, token);
+
+    } catch (error) {
+      console.error('[Lyrics] Error:', error.message);
+      await sendMessage(senderId, { 
+        text: `Error fetching lyrics for "${title}". Please try again later.` 
+      }, token);
+    }
+  },
+
+  formatLyrics(lyrics) {
+    let formatted = lyrics;
+    // Add section headers if missing
+    if (!formatted.includes('[Verse') && !formatted.includes('[Chorus') && !formatted.includes('[Bridge')) {
+      const lines = formatted.split('\n');
+      let sectionCount = 0;
+      let newLines = [];
+      let isFirst = true;
+      
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line === '') {
+          newLines.push('');
+          continue;
+        }
+        if (isFirst && line.length > 0) {
+          newLines.push(`[Verse ${sectionCount + 1}]`);
+          newLines.push(line);
+          isFirst = false;
+          sectionCount++;
+        } else if (line.length > 0 && (line.match(/[.!?]$/) || i === lines.length - 1)) {
+          // Check if it looks like a chorus (repetition)
+          if (i > 0 && lines[i-1] === line) {
+            newLines.push(`[Chorus]`);
+            newLines.push(line);
+          } else {
+            newLines.push(line);
+          }
+        } else {
+          newLines.push(line);
+        }
+      }
+      formatted = newLines.join('\n');
+    }
+    return formatted;
+  },
+
   isRealtimeQuestion(prompt) {
     const lower = prompt.toLowerCase();
     const keywords = ['oras', 'time', 'petsa', 'date', 'ngayon', 'now', 'kasalukuyan', 'current', 'real time', 'real-time', 'anong oras', 'what time', 'what is the time', 'anong petsa', 'what date', 'what is the date', 'linggo', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'araw', 'day', 'umaga', 'hapon', 'gabi', 'madaling araw', 'balita', 'news', 'update', 'latest', 'pinakahuling', 'nangyari', 'happening', 'events', 'presyo ng', 'price of', 'gastos', 'cost', 'bilihin', 'kuryente', 'electricity', 'tubig', 'water', 'gasolina', 'gas', 'bigas', 'rice', 'asukal', 'sugar', 'mantika', 'oil', 'sibuyas', 'onion', 'bawang', 'garlic', 'panahon', 'weather', 'ulan', 'rain', 'bagyo', 'typhoon', 'init', 'heat', 'lamig', 'cold', 'ano', 'what', 'kailan', 'when', 'saan', 'where', 'bakit', 'why', 'paano', 'how', 'magkano', 'how much', 'may', 'is there', 'meron', 'wala', 'none'];
@@ -269,6 +385,7 @@ module.exports = {
     }
   },
 
+  
   isGenerateCommand(prompt) {
     const commands = ['generate', 'image', 'img', 'show'];
     const lower = prompt.toLowerCase().trim();
@@ -434,7 +551,6 @@ module.exports = {
     }
   },
 
-  
   isScholarCommand(prompt) {
     const commands = ['gscholar', 'scholar', 'googlescholar', 'research'];
     const lower = prompt.toLowerCase().trim();
@@ -701,7 +817,6 @@ module.exports = {
     return citation;
   },
 
-  
   isMusicRequest(prompt) {
     const lower = prompt.toLowerCase();
     const keywords = ['play', 'song', 'music', 'track', 'audio', 'listen', 'sound', 'kanta', 'tugtog', 'music video', 'mv', 'soundtrack', 'playlist', 'album', 'single', 'remix', 'cover', 'official audio', 'official music', 'stream', 'pakinggan', 'patugtog', 'music link', 'song link', 'hit song', 'popular song', 'new song', 'latest song', 'opm', 'pinoy music', 'tagalog song', 'bisaya song', 'rap', 'hiphop', 'rnb', 'pop', 'rock', 'jazz', 'classical', 'lihim', 'halik', 'sawi', 'hugot', 'love song', 'sad song'];
@@ -803,7 +918,6 @@ module.exports = {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   },
 
- 
   async callGeminiAPI(prompt, imageUrl) {
     try {
       const geminiPrompt = this.buildGeminiPrompt(prompt);
@@ -956,7 +1070,6 @@ NEXT STEPS:
     return withTherefore;
   },
 
-  
   getApiConfig() {
     return {
       url: 'https://api-library-kohi-production.up.railway.app/api/pollination-ai',
@@ -1089,7 +1202,6 @@ NEXT STEPS:
       .trim();
   },
 
-  
   wantsDetailedAnswer(prompt) {
     const lower = prompt.toLowerCase();
     const keywords = ['explain more', 'more explanation', 'more details', 'detailed', 'detail', 'elaborate', 'elaborate more', 'paki elaborate', 'mas detalyado', 'tell me more', 'give more info', 'dagdagan', 'dagdag', 'further explain', 'further explanation', 'full explanation', 'complete explanation', 'in depth', 'in-depth', 'thorough', 'comprehensive', 'expound', 'pakilinaw', 'linawin', 'more information', 'additional info', 'karagdagang', 'can you explain further', 'please elaborate'];
@@ -1335,6 +1447,7 @@ NEXT STEPS:
     }
   },
 
+  
   async getRepliedMessageData(mid, token) {
     try {
       const url = `https://graph.facebook.com/v21.0/${mid}`;
