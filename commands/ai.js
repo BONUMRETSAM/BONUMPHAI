@@ -74,16 +74,36 @@ module.exports = {
         const history = conversationHistory[senderId];
         if (history && history.lastResponse) {
           const lowerPrompt = prompt.toLowerCase();
-          const isFollowUp = this.isFollowUpRequest(lowerPrompt) || 
-                            this.isContextualQuestion(lowerPrompt, history.lastPrompt);
-          const isNewTopic = this.isNewTopic(lowerPrompt, history.lastPrompt);
           
-          if (isFollowUp && !isNewTopic) {
-            previousResponse = history.lastResponse;
-            previousPrompt = history.lastPrompt;
-            isReply = true;
+          // Check if user wants to return to a specific topic
+          const returnToTopic = this.isReturnToTopicRequest(prompt);
+          if (returnToTopic) {
+            const topic = this.extractTopicFromReturn(prompt);
+            if (topic && history.topicHistory && history.topicHistory[topic]) {
+              previousResponse = history.topicHistory[topic];
+              previousPrompt = topic;
+              isReply = true;
+            } else {
+              delete conversationHistory[senderId];
+            }
           } else {
-            delete conversationHistory[senderId];
+            const isFollowUp = this.isFollowUpRequest(lowerPrompt) || 
+                              this.isContextualQuestion(lowerPrompt, history.lastPrompt);
+            const isNewTopic = this.isNewTopic(lowerPrompt, history.lastPrompt, prompt);
+            
+            if (isFollowUp && !isNewTopic) {
+              previousResponse = history.lastResponse;
+              previousPrompt = history.lastPrompt;
+              isReply = true;
+            } else {
+              // Save current topic to history before clearing
+              if (history.lastPrompt && history.lastResponse) {
+                if (!history.topicHistory) history.topicHistory = {};
+                const topicKey = history.lastPrompt.substring(0, 50);
+                history.topicHistory[topicKey] = history.lastResponse;
+              }
+              delete conversationHistory[senderId];
+            }
           }
         }
       }
@@ -125,7 +145,8 @@ module.exports = {
       conversationHistory[senderId] = {
         lastPrompt: prompt,
         lastResponse: aiResponse,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        topicHistory: conversationHistory[senderId]?.topicHistory || {}
       };
 
       this.cleanOldHistory();
@@ -141,6 +162,61 @@ module.exports = {
       console.error('[ai] Error:', error.message);
       await sendMessage(senderId, { text: this.getErrorMessage(error) }, token);
     }
+  },
+
+  isReturnToTopicRequest(prompt) {
+    const lower = prompt.toLowerCase();
+    const patterns = ['balik tayo sa', 'balikan natin', 'going back to', 'back to the topic', 'return to', 'tungkol naman sa', 'about the', 'regarding the'];
+    return patterns.some(p => lower.includes(p));
+  },
+
+  extractTopicFromReturn(prompt) {
+    const lower = prompt.toLowerCase();
+    const patterns = ['balik tayo sa', 'balikan natin', 'going back to', 'back to the topic', 'return to', 'tungkol naman sa', 'about the', 'regarding the'];
+    for (const pattern of patterns) {
+      if (lower.includes(pattern)) {
+        const topic = prompt.substring(prompt.toLowerCase().indexOf(pattern) + pattern.length).trim();
+        return topic || null;
+      }
+    }
+    return null;
+  },
+
+  isNewTopic(prompt, previousPrompt, originalPrompt) {
+    if (!previousPrompt) return true;
+    
+    const lowerPrompt = prompt.toLowerCase();
+    const lowerPrevious = previousPrompt.toLowerCase();
+    
+    // Casual phrases - new topic
+    const casualPhrases = ['hahaha', 'haha', 'hehe', 'lol', 'lmao', 'oh', 'ah', 'eh', 'ay', 'ha', 'hmm', 'hm', 'mmm', 'wow', 'shet', 'gagi', 'lala', 'hala', 'talaga', 'seryoso', 'grabe', 'sus', 'hay', 'ayoko', 'sige', 'cge', 'okay', 'ok', 'ge', 'bakit', 'why', 'paano', 'how', 'ano', 'what', 'saan', 'where', 'kailan', 'when', 'sino', 'who'];
+    if (casualPhrases.some(p => lowerPrompt.includes(p)) && originalPrompt.length < 20) {
+      return true;
+    }
+    
+    // Short messages - new topic
+    if (originalPrompt.length < 10 && !this.isFollowUpRequest(prompt)) {
+      return true;
+    }
+    
+    // Check if prompt contains words from previous topic
+    const prevWords = previousPrompt.split(' ').filter(w => w.length > 3);
+    const currentWords = prompt.split(' ').filter(w => w.length > 3);
+    const hasRelatedWords = prevWords.some(w => 
+      currentWords.some(cw => cw.includes(w) || w.includes(cw))
+    );
+    
+    if (!hasRelatedWords && originalPrompt.length > 5) {
+      return true;
+    }
+    
+    // New topic indicators
+    const indicators = ['hello', 'hi', 'hey', 'kamusta', 'musta', 'tanong', 'question', 'new topic', 'bagong topic', 'iba naman', 'lipat tayo', 'move on', 'gusto ko malaman', 'i want to know', 'tell me about', 'ano ang', 'what is'];
+    if (indicators.some(i => lowerPrompt.includes(i)) && !this.isFollowUpRequest(prompt)) {
+      return true;
+    }
+    
+    return false;
   },
 
   isRealtimeQuestion(prompt) {
@@ -1229,11 +1305,37 @@ NEXT STEPS:
     return keywords.some(k => prompt.includes(k));
   },
 
-  isNewTopic(prompt, previousPrompt) {
+  isNewTopic(prompt, previousPrompt, originalPrompt) {
     if (!previousPrompt) return true;
-    const indicators = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'kamusta', 'musta', 'kumusta', 'musta na', 'kumusta ka', 'oy', 'oi', 'hoy', 'ei', 'ey', 'good day', 'greetings', 'sup', 'whats up', 'whassup', 'magandang umaga', 'magandang tanghali', 'magandang hapon', 'magandang gabi', 'maayong buntag', 'maayong udto', 'maayong hapon', 'maayong gabii', 'ask', 'tanong', 'question', 'tungkol sa', 'about', 'regarding', 'sa', 'about sa', 'i want to ask', 'gusto kong itanong', 'can i ask', 'pwede magtanong', 'new topic', 'bagong topic', 'change topic', 'change subject', 'ibang topic', 'iba naman', 'next topic', 'lipat tayo', 'move on', 'what is', 'what are', 'what does', 'what do', 'ano ang', 'ano ba', 'ano yung', 'ano iyong', 'sino ang', 'sino ba', 'sino yung', 'sino iyong', 'bakit', 'paano', 'kailan', 'saan', 'why', 'how', 'when', 'where', 'who', 'which', 'tell me about', 'tell me', 'tell about', 'explain', 'define', 'describe', 'give me', 'give', 'show me', 'can you tell', 'could you tell', 'please explain', 'please tell', 'do you know', 'did you know', 'have you heard', 'have you seen', 'is it true', 'is that true', 'really', 'seriously', 'today', 'now', 'currently', 'recently', 'lately', 'nowadays', 'these days', 'this time', 'this day'];
-    if (prompt.length < 10 && !this.isFollowUpRequest(prompt)) return true;
-    return indicators.some(i => prompt.includes(i));
+    
+    const lowerPrompt = prompt.toLowerCase();
+    const lowerPrevious = previousPrompt.toLowerCase();
+    
+    const casualPhrases = ['hahaha', 'haha', 'hehe', 'lol', 'lmao', 'oh', 'ah', 'eh', 'ay', 'ha', 'hmm', 'hm', 'mmm', 'wow', 'shet', 'gagi', 'lala', 'hala', 'talaga', 'seryoso', 'grabe', 'sus', 'hay', 'ayoko', 'sige', 'cge', 'okay', 'ok', 'ge', 'bakit', 'why', 'paano', 'how', 'ano', 'what', 'saan', 'where', 'kailan', 'when', 'sino', 'who'];
+    if (casualPhrases.some(p => lowerPrompt.includes(p)) && originalPrompt.length < 20) {
+      return true;
+    }
+    
+    if (originalPrompt.length < 10 && !this.isFollowUpRequest(prompt)) {
+      return true;
+    }
+    
+    const prevWords = previousPrompt.split(' ').filter(w => w.length > 3);
+    const currentWords = prompt.split(' ').filter(w => w.length > 3);
+    const hasRelatedWords = prevWords.some(w => 
+      currentWords.some(cw => cw.includes(w) || w.includes(cw))
+    );
+    
+    if (!hasRelatedWords && originalPrompt.length > 5) {
+      return true;
+    }
+    
+    const indicators = ['hello', 'hi', 'hey', 'kamusta', 'musta', 'tanong', 'question', 'new topic', 'bagong topic', 'iba naman', 'lipat tayo', 'move on', 'gusto ko malaman', 'i want to know', 'tell me about', 'ano ang', 'what is'];
+    if (indicators.some(i => lowerPrompt.includes(i)) && !this.isFollowUpRequest(prompt)) {
+      return true;
+    }
+    
+    return false;
   },
 
   cleanOldHistory() {
