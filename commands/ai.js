@@ -145,12 +145,32 @@ module.exports = {
 
   isRealtimeQuestion(prompt) {
     const lower = prompt.toLowerCase();
-    const keywords = ['oras', 'time', 'petsa', 'date', 'ngayon', 'now', 'kasalukuyan', 'current', 'real time', 'real-time', 'anong oras', 'what time', 'what is the time', 'anong petsa', 'what date', 'what is the date', 'linggo', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'araw', 'day', 'umaga', 'hapon', 'gabi', 'madaling araw', 'balita', 'news', 'update', 'latest', 'pinakahuling', 'nangyari', 'happening', 'events', 'pangyayari', 'presyo ng', 'price of', 'gastos', 'cost', 'bilihin', 'kuryente', 'electricity', 'tubig', 'water', 'gasolina', 'gas', 'bigas', 'rice', 'asukal', 'sugar', 'mantika', 'oil', 'sibuyas', 'onion', 'bawang', 'garlic', 'senado', 'senate', 'kongreso', 'congress', 'pulitika', 'politics', 'gobyerno', 'government', 'presidente', 'president', 'bise presidente', 'vice president', 'magulo', 'gulo', 'trouble', 'chaos', 'kaguluhan', 'krisis', 'crisis', 'problema', 'problem', 'situwasyon', 'situation', 'lagay', 'condition', 'panahon', 'weather', 'ulan', 'rain', 'araw', 'sun', 'bagyo', 'typhoon', 'init', 'heat', 'lamig', 'cold', 'baha', 'flood', 'lindol', 'earthquake', 'pagputok', 'volcano', 'ano', 'what', 'kailan', 'when', 'saan', 'where', 'bakit', 'why', 'paano', 'how', 'magkano', 'how much', 'may', 'is there', 'meron', 'wala', 'none', 'report', 'reports', 'ulat', 'balita ngayon', 'ngayong araw', 'today', 'this day', 'this week'];
-    return keywords.some(k => lower.includes(k));
+    
+    const timeKeywords = ['oras', 'time', 'petsa', 'date', 'anong oras', 'what time', 'what is the time', 'anong petsa', 'what date', 'what is the date', 'real time', 'real-time', 'kasalukuyang oras', 'current time', 'current date'];
+    if (timeKeywords.some(k => lower.includes(k))) {
+      return true;
+    }
+
+    const newsKeywords = ['balita', 'news', 'update', 'latest', 'pinakahuling', 'nangyari', 'happening', 'events', 'pangyayari', 'ganap', 'senado', 'senate', 'kongreso', 'congress', 'pulitika', 'politics', 'gobyerno', 'government', 'presidente', 'president', 'bise presidente', 'vice president', 'magulo', 'gulo', 'trouble', 'chaos', 'kaguluhan', 'krisis', 'crisis', 'problema', 'problem', 'situwasyon', 'situation', 'lagay', 'condition', 'report', 'reports', 'ulat', 'balita ngayon', 'ngayong araw', 'today', 'this day', 'this week', 'ano update', 'may nangyari', 'what happened', 'ano balita'];
+    if (newsKeywords.some(k => lower.includes(k))) {
+      return true;
+    }
+
+    const weatherKeywords = ['panahon', 'weather', 'ulan', 'rain', 'bagyo', 'typhoon', 'init', 'heat', 'lamig', 'cold', 'baha', 'flood', 'lindol', 'earthquake', 'pagputok', 'volcano'];
+    if (weatherKeywords.some(k => lower.includes(k))) {
+      return true;
+    }
+
+    const priceKeywords = ['presyo ng', 'price of', 'gastos', 'cost', 'bilihin', 'kuryente', 'electricity', 'tubig', 'water', 'gasolina', 'gas', 'bigas', 'rice', 'asukal', 'sugar', 'mantika', 'oil', 'sibuyas', 'onion', 'bawang', 'garlic'];
+    if (priceKeywords.some(k => lower.includes(k))) {
+      return true;
+    }
+
+    return false;
   },
 
   async handleRealtimeQuestion(senderId, prompt, token) {
-    if (this.isTimeRequest(prompt)) {
+    if (this.isExactTimeRequest(prompt)) {
       await this.handleTimeRequest(senderId, prompt, token);
       return;
     }
@@ -191,33 +211,14 @@ module.exports = {
       console.error('[RealTime] Free-Goat API failed:', error.message);
     }
 
-    try {
-      const now = new Date();
-      const options = {
-        timeZone: 'Asia/Manila',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        weekday: 'long',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true
-      };
-      const localTime = now.toLocaleString('en-PH', options);
-      
-      let message = `Real-Time sa Pilipinas\n\nPetsa: ${localTime}\nTimezone: Asia/Manila (UTC+8)\nNote: Local system time\n\nUnable to fetch real-time information. Please try again later.`;
-      await this.sendChunks(senderId, message, token);
-    } catch (fallbackError) {
-      await sendMessage(senderId, { 
-        text: 'Unable to fetch real-time information. Please try again later.' 
-      }, token);
-    }
+    await sendMessage(senderId, { 
+      text: 'Unable to fetch real-time information. Please try again later.' 
+    }, token);
   },
 
-  isTimeRequest(prompt) {
+  isExactTimeRequest(prompt) {
     const lower = prompt.toLowerCase();
-    const keywords = ['oras', 'time', 'petsa', 'date', 'ngayon', 'now', 'kasalukuyan', 'current', 'real time', 'real-time', 'anong oras', 'what time', 'what is the time', 'anong petsa', 'what date', 'what is the date', 'linggo', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'araw', 'day', 'umaga', 'hapon', 'gabi', 'madaling araw'];
+    const keywords = ['oras', 'time', 'petsa', 'date', 'anong oras', 'what time', 'what is the time', 'anong petsa', 'what date', 'what is the date', 'real time', 'real-time', 'kasalukuyang oras', 'current time', 'current date', 'anong oras na', 'what time is it'];
     return keywords.some(k => lower.includes(k));
   },
 
