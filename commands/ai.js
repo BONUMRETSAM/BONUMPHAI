@@ -3,11 +3,12 @@ const { sendMessage } = require('../handles/sendMessage');
 
 const MAX_CHUNK = 1900;
 const conversationHistory = {};
+const SERPAPI_KEY = '96a606904519013f159fa59fca23892e38a305ea97159d1b2a77ea71364f9709';
 
 module.exports = {
-  name: ['ai', 'opera', 'ask', 'gemini', 'vision'],
-  description: 'Multi-modal AI with text, image analysis, and conversational memory',
-  usage: 'ai [message] or send/reply to image',
+  name: ['ai', 'opera', 'ask', 'gemini', 'vision', 'gscholar', 'scholar', 'googlescholar', 'research', 'generate', 'image', 'img', 'show'],
+  description: 'Multi-modal AI with text, image analysis, Google Scholar, image generation, and music search',
+  usage: 'ai [message] or send/reply to image or generate [query] or play [song]',
   version: '3.0.0',
   author: 'codex',
   category: 'AI',
@@ -21,18 +22,34 @@ module.exports = {
       let previousPrompt = null;
       let imageUrl = null;
 
-      
+      if (this.isRealtimeQuestion(prompt)) {
+        await this.handleRealtimeQuestion(senderId, prompt, token);
+        return;
+      }
+
+      if (this.isGenerateCommand(prompt) || this.isImageRequest(prompt)) {
+        await this.handleImageGeneration(senderId, prompt, token);
+        return;
+      }
+
+      if (this.isMusicRequest(prompt)) {
+        await this.handleMusicSearch(senderId, prompt, token);
+        return;
+      }
+
+      if (this.isScholarCommand(prompt) || this.isResearchQuery(prompt)) {
+        await this.handleScholarSearch(senderId, prompt, token);
+        return;
+      }
+
       if (event?.message?.reply_to?.mid) {
         isReply = true;
         const replyData = await this.getRepliedMessageData(event.message.reply_to.mid, token);
         previousResponse = replyData.message;
         imageUrl = replyData.imageUrl;
-        if (!prompt) {
-          prompt = 'Please respond to what I said.';
-        }
+        if (!prompt) prompt = 'Please respond to what I said.';
       }
 
-      
       if (!imageUrl && event?.message?.attachments) {
         for (const attachment of event.message.attachments) {
           if (attachment.type === 'image' || attachment.type === 'photo') {
@@ -45,12 +62,9 @@ module.exports = {
             break;
           }
         }
-        if (imageUrl && !prompt) {
-          prompt = 'Analyze this image.';
-        }
+        if (imageUrl && !prompt) prompt = 'Analyze this image.';
       }
 
-      
       if (!isReply && prompt) {
         const history = conversationHistory[senderId];
         if (history && history.lastResponse) {
@@ -69,15 +83,13 @@ module.exports = {
         }
       }
 
-      
       if (!prompt && !isReply && !imageUrl) {
         await sendMessage(senderId, {
-          text: 'Hello! I am Teacher Arlene - Multi-Modal AI.\n\nCapabilities:\n• Text conversations\n• Image analysis\n• Translation\n• Summarization\n\nCommands:\n• ai [question]\n• Send an image for analysis\n• Reply to an image for analysis'
+          text: 'Hello! I am Teacher Arlene - Multi-Modal AI.\n\nCapabilities:\nText conversations\nImage analysis\nAcademic research\nImage generation\nMusic search\nTranslation\nSummarization\n\nCommands:\nai [question]\nSend an image for analysis\ngenerate [search term] [number]\ngscholar [search query]\nplay [song title]'
         }, token);
         return;
       }
 
-      
       if (this.isOwnerQuestion(prompt)) {
         await sendMessage(senderId, {
           text: 'I was created by GeoDevz69. Visit here for more clarifications:\nhttps://www.facebook.com/geotechph.net'
@@ -85,7 +97,6 @@ module.exports = {
         return;
       }
 
-      
       if (this.isUserInfoQuestion(prompt)) {
         await this.handleUserInfo(senderId, prompt, token);
         return;
@@ -94,22 +105,18 @@ module.exports = {
       const wantsDetailed = this.wantsDetailedAnswer(prompt);
       let aiResponse = '';
 
-      
       if (imageUrl) {
         aiResponse = await this.callGeminiAPI(prompt, imageUrl);
       } else {
-        
         const finalPrompt = this.buildFinalPrompt(prompt, previousResponse, previousPrompt, isReply, wantsDetailed);
         const response = await this.callAPI(finalPrompt, senderId);
         aiResponse = this.cleanResponse(response || 'No response from API.');
       }
 
-      
       if (!imageUrl && !isReply && !wantsDetailed) {
         aiResponse = this.shortenResponse(aiResponse);
       }
 
-      
       conversationHistory[senderId] = {
         lastPrompt: prompt,
         lastResponse: aiResponse,
@@ -118,7 +125,6 @@ module.exports = {
 
       this.cleanOldHistory();
 
-      
       if (isReply && this.isTranslationRequest(prompt)) {
         const targetLanguage = this.detectTargetLanguage(prompt);
         aiResponse = await this.translateResponse(aiResponse, targetLanguage);
@@ -132,8 +138,672 @@ module.exports = {
     }
   },
 
+  
+  isRealtimeQuestion(prompt) {
+    const lower = prompt.toLowerCase();
+    const keywords = ['oras', 'time', 'petsa', 'date', 'ngayon', 'now', 'kasalukuyan', 'current', 'real time', 'real-time', 'anong oras', 'what time', 'what is the time', 'anong petsa', 'what date', 'what is the date', 'linggo', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'araw', 'day', 'umaga', 'hapon', 'gabi', 'madaling araw', 'balita', 'news', 'update', 'latest', 'pinakahuling', 'nangyari', 'happening', 'events', 'presyo ng', 'price of', 'gastos', 'cost', 'bilihin', 'kuryente', 'electricity', 'tubig', 'water', 'gasolina', 'gas', 'bigas', 'rice', 'asukal', 'sugar', 'mantika', 'oil', 'sibuyas', 'onion', 'bawang', 'garlic', 'panahon', 'weather', 'ulan', 'rain', 'bagyo', 'typhoon', 'init', 'heat', 'lamig', 'cold', 'ano', 'what', 'kailan', 'when', 'saan', 'where', 'bakit', 'why', 'paano', 'how', 'magkano', 'how much', 'may', 'is there', 'meron', 'wala', 'none'];
+    return keywords.some(k => lower.includes(k));
+  },
 
+  async handleRealtimeQuestion(senderId, prompt, token) {
+    if (this.isTimeRequest(prompt)) {
+      await this.handleTimeRequest(senderId, prompt, token);
+      return;
+    }
 
+    try {
+      const encodedPrompt = encodeURIComponent(prompt);
+      const apiUrl = `https://free-goat-api.onrender.com/rapidai?message=${encodedPrompt}`;
+      const response = await axios.get(apiUrl, {
+        timeout: 30000,
+        headers: { 'Accept': 'application/json' }
+      });
+
+      const data = response.data;
+      if (data.status === true && data.result) {
+        let cleanResponse = this.cleanResponse(data.result);
+        await this.sendChunks(senderId, cleanResponse, token);
+        return;
+      }
+    } catch (error) {
+      console.error('[RealTime] Free-Goat API failed:', error.message);
+    }
+
+    try {
+      const encodedPrompt = encodeURIComponent(prompt);
+      const apiUrl = `https://api-library-kohi-production.up.railway.app/api/copilot?prompt=${encodedPrompt}&model=gpt-5&user=123`;
+      const response = await axios.get(apiUrl, {
+        timeout: 30000,
+        headers: { 'Accept': 'application/json' }
+      });
+
+      const data = response.data;
+      if (data.status === true && data.data && data.data.text) {
+        let cleanResponse = this.cleanResponse(data.data.text);
+        await this.sendChunks(senderId, cleanResponse, token);
+        return;
+      }
+    } catch (error) {
+      console.error('[RealTime] GPT-5 API failed:', error.message);
+    }
+
+    await sendMessage(senderId, { 
+      text: 'Unable to fetch real-time information. Please try again later.' 
+    }, token);
+  },
+
+  isTimeRequest(prompt) {
+    const lower = prompt.toLowerCase();
+    const keywords = ['oras', 'time', 'petsa', 'date', 'ngayon', 'now', 'kasalukuyan', 'current', 'real time', 'real-time', 'anong oras', 'what time', 'what is the time', 'anong petsa', 'what date', 'what is the date', 'linggo', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'araw', 'day', 'umaga', 'hapon', 'gabi', 'madaling araw'];
+    return keywords.some(k => lower.includes(k));
+  },
+
+  async handleTimeRequest(senderId, prompt, token) {
+    try {
+      const response = await axios.get('https://worldtimeapi.org/api/timezone/Asia/Manila', {
+        timeout: 10000
+      });
+
+      const data = response.data;
+      const datetime = data.datetime;
+      const date = new Date(datetime);
+      
+      const options = {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'long',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      };
+      
+      const formattedTime = date.toLocaleString('en-PH', options);
+      const day = date.toLocaleString('en-PH', { weekday: 'long' });
+      const month = date.toLocaleString('en-PH', { month: 'long' });
+      const hour = date.getHours();
+      const minute = date.getMinutes();
+      const seconds = date.getSeconds();
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const hour12 = hour % 12 || 12;
+      
+      let message = `Real-Time sa Pilipinas\n\n`;
+      message += `Petsa: ${day}, ${month} ${date.getDate()}, ${date.getFullYear()}\n`;
+      message += `Oras: ${hour12}:${minute.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm} (PHT)\n`;
+      message += `Timezone: Asia/Manila (UTC+8)\n`;
+      message += `Daylight Saving: Hindi ginagamit sa Pilipinas`;
+
+      await this.sendChunks(senderId, message, token);
+
+    } catch (error) {
+      console.error('[Time] WorldTimeAPI failed:', error.message);
+      
+      try {
+        const now = new Date();
+        const options = {
+          timeZone: 'Asia/Manila',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          weekday: 'long',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        };
+        const fallbackTime = now.toLocaleString('en-PH', options);
+        
+        let message = `Real-Time sa Pilipinas\n\n`;
+        message += `Petsa: ${fallbackTime}\n`;
+        message += `Timezone: Asia/Manila (UTC+8)\n`;
+        message += `Note: Local system time`;
+
+        await this.sendChunks(senderId, message, token);
+      } catch (fallbackError) {
+        await sendMessage(senderId, { 
+          text: 'Unable to fetch real-time time. Please try again later.' 
+        }, token);
+      }
+    }
+  },
+
+  isGenerateCommand(prompt) {
+    const commands = ['generate', 'image', 'img', 'show'];
+    const lower = prompt.toLowerCase().trim();
+    return commands.some(cmd => lower.startsWith(cmd));
+  },
+
+  isImageRequest(prompt) {
+    const lower = prompt.toLowerCase();
+    const keywords = ['show me', 'give me', 'i want', 'sample', 'example', 'picture of', 'image of', 'photo of', 'generate', 'create', 'need', 'maghanap ng', 'gusto ko', 'patingin ng', 'ano itsura', 'looks like', 'parang', 'larawan ng', 'litrato ng', 'imahe ng', 'want to see', 'can i see', 'let me see', 'find image', 'get image', 'search image'];
+    return keywords.some(keyword => lower.includes(keyword));
+  },
+
+  async handleImageGeneration(senderId, prompt, token) {
+    let searchTerm = prompt;
+    let imageCount = 10;
+
+    const commands = ['generate', 'image', 'img', 'show'];
+    for (const cmd of commands) {
+      if (searchTerm.toLowerCase().startsWith(cmd)) {
+        searchTerm = searchTerm.slice(cmd.length).trim();
+        break;
+      }
+    }
+
+    const removeKeywords = ['show me', 'give me', 'i want', 'sample', 'example', 'picture of', 'image of', 'photo of', 'generate', 'create', 'need', 'maghanap ng', 'gusto ko', 'patingin ng', 'ano itsura', 'looks like', 'parang', 'larawan ng', 'litrato ng', 'imahe ng', 'want to see', 'can i see', 'let me see', 'find image', 'get image', 'search image'];
+    for (const keyword of removeKeywords) {
+      if (searchTerm.toLowerCase().includes(keyword)) {
+        searchTerm = searchTerm.toLowerCase().replace(keyword, '').trim();
+        break;
+      }
+    }
+
+    const args = searchTerm.split(' ');
+    const lastArg = args[args.length - 1];
+    if (!isNaN(lastArg) && lastArg > 0 && lastArg <= 30) {
+      imageCount = parseInt(lastArg);
+      searchTerm = args.slice(0, -1).join(' ');
+    }
+
+    const numberMatch = searchTerm.match(/(\d+)\s*(image|picture|photo|pic)s?$/i);
+    if (numberMatch) {
+      const num = parseInt(numberMatch[1]);
+      if (num > 0 && num <= 30) {
+        imageCount = num;
+        searchTerm = searchTerm.replace(/\d+\s*(image|picture|photo|pic)s?$/i, '').trim();
+      }
+    }
+
+    if (!searchTerm) {
+      await sendMessage(senderId, { text: 'Image Generation\n\nUsage: generate [search term] [number]\n\nExamples:\ngenerate cat\ngenerate beautiful sunset 5\nshow me image of dog' }, token);
+      return;
+    }
+
+    try {
+      const cleanSearch = searchTerm.toLowerCase().trim();
+      const searchWords = cleanSearch.split(/\s+/);
+      let allImages = [];
+
+      const response1 = await axios.get('https://hiroshi-api.onrender.com/image/pinterest', {
+        params: { search: searchTerm, limit: 100 }
+      });
+      allImages = [...allImages, ...(response1.data?.data || [])];
+
+      const response2 = await axios.get('https://hiroshi-api.onrender.com/image/pinterest', {
+        params: { search: `${searchTerm} ${Date.now()}`, limit: 100 }
+      });
+      allImages = [...allImages, ...(response2.data?.data || [])];
+
+      if (searchWords.length > 1) {
+        const response3 = await axios.get('https://hiroshi-api.onrender.com/image/pinterest', {
+          params: { search: searchWords[0], limit: 100 }
+        });
+        allImages = [...allImages, ...(response3.data?.data || [])];
+      }
+
+      if (allImages.length === 0) {
+        await sendMessage(senderId, { text: `No images found for "${searchTerm}".` }, token);
+        return;
+      }
+
+      const exactMatches = allImages.filter(url => {
+        if (!url) return false;
+        const decoded = decodeURIComponent(url).toLowerCase();
+        return decoded.includes(cleanSearch) || decoded.includes(cleanSearch.replace(/\s+/g, '-')) || decoded.includes(cleanSearch.replace(/\s+/g, '_'));
+      });
+
+      const wordMatches = allImages.filter(url => {
+        if (!url) return false;
+        const decoded = decodeURIComponent(url).toLowerCase();
+        return searchWords.some(word => {
+          if (word.length < 2) return false;
+          return decoded.includes(word);
+        });
+      });
+
+      let finalImages = [...exactMatches];
+      
+      if (finalImages.length < imageCount) {
+        for (const url of wordMatches) {
+          if (!finalImages.includes(url)) {
+            finalImages.push(url);
+          }
+          if (finalImages.length >= imageCount) break;
+        }
+      }
+
+      if (finalImages.length < imageCount) {
+        for (const url of allImages) {
+          if (!finalImages.includes(url) && this.isValidUrl(url)) {
+            finalImages.push(url);
+          }
+          if (finalImages.length >= imageCount) break;
+        }
+      }
+
+      const uniqueImages = [];
+      const seen = new Set();
+      for (const url of finalImages) {
+        if (!seen.has(url) && this.isValidUrl(url)) {
+          uniqueImages.push(url);
+          seen.add(url);
+        }
+        if (uniqueImages.length >= imageCount) break;
+      }
+
+      const shuffled = uniqueImages.sort(() => Math.random() - 0.5);
+      const resultImages = shuffled.slice(0, imageCount);
+
+      if (resultImages.length === 0) {
+        await sendMessage(senderId, { text: `No valid images found for "${searchTerm}".` }, token);
+        return;
+      }
+
+      for (let i = 0; i < resultImages.length; i++) {
+        const imageUrl = resultImages[i];
+        if (imageUrl && this.isValidUrl(imageUrl)) {
+          await sendMessage(senderId, {
+            attachment: {
+              type: 'image',
+              payload: { url: imageUrl }
+            }
+          }, token);
+          if (i < resultImages.length - 1) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+          }
+        }
+      }
+
+      await sendMessage(senderId, { text: `Found ${resultImages.length} image(s) for "${searchTerm}"` }, token);
+
+    } catch (error) {
+      console.log('[Generate] Error:', error.message);
+      await sendMessage(senderId, { text: `Error fetching images for "${searchTerm}". Please try again.` }, token);
+    }
+  },
+
+  isValidUrl(string) {
+    try {
+      new URL(string);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  },
+
+  
+  isScholarCommand(prompt) {
+    const commands = ['gscholar', 'scholar', 'googlescholar', 'research'];
+    const lower = prompt.toLowerCase().trim();
+    return commands.some(cmd => lower.startsWith(cmd));
+  },
+
+  isResearchQuery(prompt) {
+    const lower = prompt.toLowerCase();
+    const keywords = ['research', 'study', 'studies', 'paper', 'papers', 'article', 'articles', 'journal', 'journals', 'thesis', 'dissertation', 'literature', 'review', 'meta-analysis', 'systematic review', 'citation', 'citations', 'academic', 'scholar', 'scholarly', 'peer-reviewed', 'peer review', 'hypothesis', 'methodology', 'findings', 'results', 'conclusion', 'data analysis', 'experiment', 'experimental', 'clinical trial', 'randomized', 'controlled trial', 'observational', 'cohort study', 'case study', 'case report', 'survey', 'questionnaire', 'qualitative', 'quantitative', 'mixed methods', 'evidence-based', 'literature search', 'systematic', 'bibliography', 'references', 'reference', 'impact factor', 'h-index', 'citation index', 'scopus', 'web of science', 'pubmed', 'google scholar'];
+    return keywords.some(keyword => lower.includes(keyword));
+  },
+
+  async handleScholarSearch(senderId, prompt, token) {
+    let query = prompt;
+    const commands = ['gscholar', 'scholar', 'googlescholar', 'research'];
+    for (const cmd of commands) {
+      if (query.toLowerCase().startsWith(cmd)) {
+        query = query.slice(cmd.length).trim();
+        break;
+      }
+    }
+
+    if (!query) {
+      await sendMessage(senderId, { text: 'Google Scholar Search\n\nUsage: gscholar [search query]\n\nExamples:\ngscholar coconut hybridization\nresearch machine learning' }, token);
+      return;
+    }
+
+    try {
+      const response = await axios.get('https://serpapi.com/search', {
+        params: {
+          engine: 'google_scholar',
+          q: query,
+          api_key: SERPAPI_KEY,
+          num: 5
+        },
+        timeout: 30000
+      });
+
+      const results = response.data?.organic_results || [];
+
+      if (results.length === 0) {
+        await sendMessage(senderId, { text: `No results found for "${query}".` }, token);
+        return;
+      }
+
+      for (let i = 0; i < results.length; i++) {
+        const paper = results[i];
+        const title = paper.title || 'No title';
+        const snippet = paper.snippet || 'No abstract available';
+        const citedBy = paper.inline_links?.cited_by?.total || '0';
+        const scholarLink = paper.link || paper.redirect_link || `https://scholar.google.com/scholar?q=${encodeURIComponent(title)}`;
+
+        let authors = 'Unknown';
+        let venue = 'Unknown';
+        let year = 'Unknown';
+        let volume = '';
+        let issue = '';
+        let pages = '';
+        
+        if (paper.publication_info?.summary) {
+          const summary = paper.publication_info.summary;
+          const authorMatch = summary.match(/^([^-]+?)(?=\s*[,-]|\s*$)/);
+          if (authorMatch) authors = authorMatch[1].trim();
+          const venueMatch = summary.match(/[,-]\s*([^,]+?)(?=\s*[,-]|\s*$)/);
+          if (venueMatch) venue = venueMatch[1].trim();
+          const yearMatch = summary.match(/\b(19|20)\d{2}\b/);
+          if (yearMatch) year = yearMatch[0];
+        }
+
+        const text = `${snippet} ${paper.publication_info?.summary || ''}`;
+        
+        const volumePatterns = [/vol\.?\s*(\d+)/i, /volume\s*(\d+)/i, /v\.\s*(\d+)/i, /(\d+)\s*\(/];
+        for (const pattern of volumePatterns) {
+          const match = text.match(pattern);
+          if (match) { volume = match[1]; break; }
+        }
+        
+        const issuePatterns = [/no\.?\s*(\d+)/i, /issue\s*(\d+)/i, /\((\d+)\)/];
+        for (const pattern of issuePatterns) {
+          const match = text.match(pattern);
+          if (match && match[1] !== volume) { issue = match[1]; break; }
+        }
+        
+        const pagePatterns = [/pp\.?\s*(\d+-\d+)/i, /pages?\s*(\d+-\d+)/i, /(\d+-\d+)\s*pp/i, /(\d+-\d+)\s*\(/i, /:\s*(\d+-\d+)/i];
+        for (const pattern of pagePatterns) {
+          const match = text.match(pattern);
+          if (match) { pages = match[1]; break; }
+        }
+
+        let doi = await this.fetchDOIFromCrossRef(title, authors, year);
+        if (!doi) doi = this.extractDOIFromLink(scholarLink);
+
+        if (doi) {
+          const metadata = await this.getCompleteMetadata(doi);
+          if (metadata) {
+            if (!volume && metadata.volume) volume = metadata.volume;
+            if (!issue && metadata.issue) issue = metadata.issue;
+            if (!pages && metadata.pages) pages = metadata.pages;
+            if (venue === 'Unknown' && metadata.journal) venue = metadata.journal;
+            if (year === 'Unknown' && metadata.year) year = metadata.year;
+          }
+        }
+
+        const displayAuthors = this.formatAuthorsDisplay(authors);
+        const apaCitation = this.generateAPA(authors, year, title, venue, volume, issue, pages, doi, scholarLink);
+        const mlaCitation = this.generateMLA(authors, title, venue, year, scholarLink, doi, volume, issue, pages);
+
+        let message = `${i + 1}. ${title}\n\n`;
+        message += `Authors: ${displayAuthors}\n`;
+        message += `Published in: ${venue}\n`;
+        message += `Year: ${year}\n`;
+        if (volume) message += `Volume: ${volume}\n`;
+        if (issue) message += `Issue: ${issue}\n`;
+        if (pages) message += `Pages: ${pages}\n`;
+        message += `DOI: ${doi || 'Not available'}\n`;
+        if (citedBy !== '0') message += `Cited by: ${citedBy}\n`;
+        message += `Abstract: ${snippet.substring(0, 300)}${snippet.length > 300 ? '...' : ''}\n\n`;
+        if (scholarLink) message += `Google Scholar: ${scholarLink}\n\n`;
+        message += `APA 7th Edition:\n${apaCitation}\n\n`;
+        message += `MLA 9th Edition:\n${mlaCitation}\n\n`;
+        message += `Verified: Viewable and accessible\n`;
+        message += `${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`;
+
+        await sendMessage(senderId, { text: message }, token);
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      await sendMessage(senderId, { text: `Search Complete!\n\nQuery: ${query}\nFound: ${results.length} papers\nSource: Google Scholar Website` }, token);
+
+    } catch (error) {
+      console.error('[gscholar] Error:', error.message);
+      let errorMessage = 'Failed to search Google Scholar. ';
+      if (error.response?.status === 429) errorMessage += 'Rate limit exceeded. Please wait a moment.';
+      else if (error.response?.status === 403) errorMessage += 'API key invalid or expired.';
+      else errorMessage += 'Please try again later.';
+      await sendMessage(senderId, { text: errorMessage }, token);
+    }
+  },
+
+  formatAuthorsDisplay(authors) {
+    const list = authors.split(',').map(a => a.trim()).filter(a => a);
+    if (list.length === 0 || (list.length === 1 && list[0] === 'Unknown')) return 'Unknown';
+    if (list.length <= 3) return list.join(', ');
+    return `${list.slice(0, 3).join(', ')}, et al.`;
+  },
+
+  async fetchDOIFromCrossRef(title, authors, year) {
+    try {
+      let query = encodeURIComponent(title);
+      if (authors && authors !== 'Unknown') {
+        const first = authors.split(',')[0].trim();
+        query += `+${encodeURIComponent(first)}`;
+      }
+      if (year && year !== 'Unknown') query += `+${year}`;
+      const url = `https://api.crossref.org/works?query=${query}&rows=1`;
+      const response = await axios.get(url, { timeout: 10000, headers: { 'User-Agent': 'AcademicBot/1.0' } });
+      const items = response.data?.message?.items || [];
+      if (items.length > 0 && items[0].DOI) return `https://doi.org/${items[0].DOI}`;
+      return null;
+    } catch (error) {
+      console.error('[DOI] Fetch error:', error.message);
+      return null;
+    }
+  },
+
+  extractDOIFromLink(link) {
+    if (!link) return null;
+    const patterns = [
+      { regex: /doi\.org\/([^\s]+)/i, prefix: 'https://doi.org/' },
+      { regex: /article\/(10\.[^\s]+)/i, prefix: 'https://doi.org/' },
+      { regex: /nature\.com\/articles\/([a-zA-Z0-9]+)/, prefix: 'https://doi.org/10.1038/' },
+      { regex: /pii\/([a-zA-Z0-9]+)/, prefix: 'https://doi.org/10.1016/' },
+      { regex: /wiley\.com\/doi\/abs\/([^\s]+)/, prefix: 'https://doi.org/' }
+    ];
+    for (const pattern of patterns) {
+      const match = link.match(pattern.regex);
+      if (match) return `${pattern.prefix}${match[1]}`;
+    }
+    return null;
+  },
+
+  async getCompleteMetadata(doi) {
+    try {
+      const clean = doi.replace('https://doi.org/', '');
+      const url = `https://api.crossref.org/works/${clean}`;
+      const response = await axios.get(url, { timeout: 10000, headers: { 'User-Agent': 'AcademicBot/1.0' } });
+      const data = response.data?.message;
+      if (data) {
+        return {
+          volume: data.volume || '',
+          issue: data.issue || '',
+          pages: data.page || '',
+          journal: data['container-title']?.[0] || '',
+          year: data.issued?.['date-parts']?.[0]?.[0] || ''
+        };
+      }
+    } catch (error) {
+      console.error('[Crossref] Error:', error.message);
+    }
+    return null;
+  },
+
+  generateAPA(authors, year, title, venue, volume, issue, pages, doi, url) {
+    const list = authors.split(',').map(a => a.trim()).filter(a => a);
+    let formatted = '';
+    if (list.length === 0 || (list.length === 1 && list[0] === 'Unknown')) {
+      formatted = 'Unknown';
+    } else if (list.length === 1) {
+      const parts = list[0].split(' ');
+      if (parts.length > 1) {
+        const last = parts[parts.length-1];
+        const first = parts.slice(0, -1).map(p => p[0] + '.').join(' ');
+        formatted = `${last}, ${first}`;
+      } else formatted = list[0];
+    } else if (list.length === 2) {
+      const p1 = list[0].split(' ');
+      const p2 = list[1].split(' ');
+      const l1 = p1.length > 1 ? p1[p1.length-1] : p1[0];
+      const f1 = p1.length > 1 ? p1.slice(0, -1).map(p => p[0] + '.').join(' ') : '';
+      const l2 = p2.length > 1 ? p2[p2.length-1] : p2[0];
+      const f2 = p2.length > 1 ? p2.slice(0, -1).map(p => p[0] + '.').join(' ') : '';
+      formatted = `${l1}, ${f1}, & ${l2}, ${f2}`;
+    } else {
+      const parts = list[0].split(' ');
+      const last = parts.length > 1 ? parts[parts.length-1] : parts[0];
+      const first = parts.length > 1 ? parts.slice(0, -1).map(p => p[0] + '.').join(' ') : '';
+      formatted = `${last}, ${first}, et al.`;
+    }
+    let citation = `${formatted} (${year}). ${title}.`;
+    if (venue && venue !== 'Unknown') citation += ` ${venue}`;
+    if (volume) { citation += `, ${volume}`; if (issue) citation += `(${issue})`; }
+    if (pages) citation += `, ${pages}`;
+    if (doi) citation += `. ${doi}`;
+    else if (url && url !== '') citation += ` Retrieved from ${url}`;
+    return citation;
+  },
+
+  generateMLA(authors, title, venue, year, url, doi, volume, issue, pages) {
+    const list = authors.split(',').map(a => a.trim()).filter(a => a);
+    let formatted = '';
+    if (list.length === 0 || (list.length === 1 && list[0] === 'Unknown')) {
+      formatted = 'Unknown';
+    } else if (list.length === 1) {
+      const parts = list[0].split(' ');
+      formatted = parts.length > 1 ? `${parts[parts.length-1]}, ${parts.slice(0, -1).join(' ')}` : list[0];
+    } else if (list.length === 2) {
+      const p1 = list[0].split(' ');
+      const p2 = list[1].split(' ');
+      const l1 = p1.length > 1 ? p1[p1.length-1] : p1[0];
+      const l2 = p2.length > 1 ? p2[p2.length-1] : p2[0];
+      formatted = `${l1} and ${l2}`;
+    } else {
+      const parts = list[0].split(' ');
+      const last = parts.length > 1 ? parts[parts.length-1] : parts[0];
+      formatted = `${last} et al.`;
+    }
+    let citation = `${formatted}. "${title}." ${venue},`;
+    if (volume) { citation += ` vol. ${volume},`; if (issue) citation += ` no. ${issue},`; }
+    if (pages) citation += ` pp. ${pages},`;
+    citation += ` ${year}.`;
+    if (doi) citation += ` doi:${doi.replace('https://doi.org/', '')}.`;
+    else if (url && url !== '') citation += ` ${url}.`;
+    citation += ` Web. ${new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}.`;
+    return citation;
+  },
+
+  
+  isMusicRequest(prompt) {
+    const lower = prompt.toLowerCase();
+    const keywords = ['play', 'song', 'music', 'track', 'audio', 'listen', 'sound', 'kanta', 'tugtog', 'music video', 'mv', 'soundtrack', 'playlist', 'album', 'single', 'remix', 'cover', 'official audio', 'official music', 'stream', 'pakinggan', 'patugtog', 'music link', 'song link', 'hit song', 'popular song', 'new song', 'latest song', 'opm', 'pinoy music', 'tagalog song', 'bisaya song', 'rap', 'hiphop', 'rnb', 'pop', 'rock', 'jazz', 'classical', 'lihim', 'halik', 'sawi', 'hugot', 'love song', 'sad song'];
+    return keywords.some(k => lower.includes(k));
+  },
+
+  async handleMusicSearch(senderId, prompt, token) {
+    let searchTerm = prompt;
+    const removeKeywords = ['play', 'song', 'music', 'track', 'audio', 'listen', 'sound', 'kanta', 'tugtog', 'music video', 'mv', 'soundtrack', 'playlist', 'album', 'single', 'remix', 'cover', 'official audio', 'official music', 'stream', 'pakinggan', 'patugtog', 'music link', 'song link', 'hit song', 'popular song', 'new song', 'latest song', 'opm', 'pinoy music', 'tagalog song', 'bisaya song'];
+
+    for (const keyword of removeKeywords) {
+      if (searchTerm.toLowerCase().includes(keyword)) {
+        searchTerm = searchTerm.toLowerCase().replace(keyword, '').trim();
+        break;
+      }
+    }
+
+    if (!searchTerm) {
+      await sendMessage(senderId, { text: 'Music Search\n\nUsage: play [song title] or music [song title]\n\nExamples:\nplay lihim\nmusic halik\nplay love song\npakinggan ang liwanag' }, token);
+      return;
+    }
+
+    try {
+      const encodedSearch = encodeURIComponent(searchTerm);
+      const apiUrl = `https://betadash-api-swordslush-production.up.railway.app/sc?search=${encodedSearch}`;
+      const response = await axios.get(apiUrl, {
+        timeout: 30000,
+        headers: { 'Accept': 'application/json' }
+      });
+
+      const data = response.data;
+      if (!data || !data.results || data.results.length === 0) {
+        await sendMessage(senderId, { text: `No results found for "${searchTerm}".` }, token);
+        return;
+      }
+
+      const exactMatches = data.results.filter(track => {
+        const title = track.data.title || '';
+        return title.toLowerCase().includes(searchTerm.toLowerCase());
+      });
+
+      const results = exactMatches.length > 0 ? exactMatches : data.results;
+      const totalResults = results.length;
+
+      let message = `SoundCloud Results for "${searchTerm}"\nFound ${totalResults} song(s)\n\n`;
+
+      for (let i = 0; i < results.length; i++) {
+        const track = results[i].data;
+        const title = track.title || 'Unknown Title';
+        const artist = track.user ? track.user.username || 'Unknown Artist' : 'Unknown Artist';
+        const duration = this.formatDuration(track.duration || 0);
+        const plays = track.playback_count || 0;
+        const likes = track.likes_count || 0;
+        const genre = track.genre || 'Unknown Genre';
+        const url = track.permalink_url || '';
+        const artwork = track.artwork_url || '';
+        const created = track.created_at ? new Date(track.created_at).toLocaleDateString('en-PH') : 'Unknown Date';
+
+        let audioUrl = '';
+        if (track.media && track.media.transcodings) {
+          const progressive = track.media.transcodings.find(t => 
+            t.format && t.format.protocol === 'progressive' && t.format.mime_type === 'audio/mpeg'
+          );
+          if (progressive && progressive.url) {
+            audioUrl = progressive.url;
+          }
+        }
+        if (!audioUrl && url) audioUrl = url;
+
+        message += `${i + 1}. ${title}\n`;
+        message += `Singer/Artist: ${artist}\n`;
+        message += `Genre: ${genre}\n`;
+        message += `Duration: ${duration}\n`;
+        message += `Released: ${created}\n`;
+        message += `Plays: ${plays.toLocaleString()}\n`;
+        message += `Likes: ${likes.toLocaleString()}\n`;
+        if (artwork) message += `Artwork: ${artwork}\n`;
+        message += `Listen: ${url}\n`;
+        if (audioUrl) message += `Direct Audio: ${audioUrl}\n`;
+        message += `\n`;
+      }
+
+      message += `Found ${totalResults} result(s)\n`;
+      message += `${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`;
+
+      await this.sendChunks(senderId, message, token);
+
+    } catch (error) {
+      console.error('[Music] Error:', error.message);
+      await sendMessage(senderId, { text: `Error searching for "${searchTerm}". Please try again later.` }, token);
+    }
+  },
+
+  formatDuration(ms) {
+    if (!ms) return 'Unknown';
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  },
+
+ 
   async callGeminiAPI(prompt, imageUrl) {
     try {
       const geminiPrompt = this.buildGeminiPrompt(prompt);
@@ -152,10 +822,7 @@ module.exports = {
             maxContentLength: 50 * 1024 * 1024,
             maxBodyLength: 50 * 1024 * 1024
           });
-
-          if (response.status === 200 && response.data) {
-            break;
-          }
+          if (response.status === 200 && response.data) break;
         } catch (error) {
           console.log(`[Gemini] Attempt ${attempts} failed:`, error.message);
           if (attempts >= maxAttempts) throw error;
@@ -164,16 +831,12 @@ module.exports = {
         }
       }
 
-      if (!response || !response.data) {
-        throw new Error('No response from Gemini API');
-      }
-
+      if (!response || !response.data) throw new Error('No response from Gemini API');
       let processed = this.processGeminiResponse(response.data.response || '');
       return processed || 'Unable to analyze the image. Please try again.';
 
     } catch (error) {
       console.error('[Gemini] Error:', error.message);
-      
       const fallbackPrompt = `The user sent an image but the image analysis failed. The user asked: ${prompt || 'Please describe what you see'}. Please provide a helpful response.`;
       const response = await this.callAPI(fallbackPrompt, 'gemini_fallback');
       return this.cleanResponse(response || 'Unable to analyze the image. Please try again.');
@@ -227,7 +890,6 @@ NEXT STEPS:
     if (userPrompt && !userPrompt.includes('Analyze this image')) {
       prompt += `\n\nUSER QUESTION: ${userPrompt}`;
     }
-
     return prompt;
   },
 
@@ -264,33 +926,28 @@ NEXT STEPS:
 
   ensureThereforeSection(response) {
     let withTherefore = response;
-    const lowerResponse = response.toLowerCase();
-    const hasTherefore = lowerResponse.includes('therefore') || 
-                         lowerResponse.includes('core point') ||
-                         lowerResponse.includes('main takeaway') ||
-                         lowerResponse.includes('final answer') ||
-                         lowerResponse.includes('key insight');
+    const lower = response.toLowerCase();
+    const has = lower.includes('therefore') || lower.includes('core point') ||
+                lower.includes('main takeaway') || lower.includes('final answer') ||
+                lower.includes('key insight');
 
-    if (!hasTherefore) {
+    if (!has) {
       const lines = response.split('\n');
-      let analysisEnd = 0;
-      let foundAnalysis = false;
-
+      let end = 0;
+      let found = false;
       for (let i = 0; i < lines.length; i++) {
-        if (lines[i].toLowerCase().includes('analysis:') || 
-            lines[i].toLowerCase().includes('analysis')) {
-          foundAnalysis = true;
+        if (lines[i].toLowerCase().includes('analysis:') || lines[i].toLowerCase().includes('analysis')) {
+          found = true;
           continue;
         }
-        if (foundAnalysis && lines[i].trim() === '') {
-          analysisEnd = i;
+        if (found && lines[i].trim() === '') {
+          end = i;
           break;
         }
       }
-
-      if (analysisEnd > 0) {
-        const before = lines.slice(0, analysisEnd).join('\n');
-        const after = lines.slice(analysisEnd).join('\n');
+      if (end > 0) {
+        const before = lines.slice(0, end).join('\n');
+        const after = lines.slice(end).join('\n');
         withTherefore = before + '\n\nTHEREFORE:\n[Core insight based on the analysis above]\n\n' + after;
       } else {
         withTherefore = 'THEREFORE:\n[Main conclusion from the image]\n\n' + response;
@@ -299,8 +956,7 @@ NEXT STEPS:
     return withTherefore;
   },
 
-  // ==================== TEXT API WITH FALLBACK ====================
-
+  
   getApiConfig() {
     return {
       url: 'https://api-library-kohi-production.up.railway.app/api/pollination-ai',
@@ -324,19 +980,17 @@ NEXT STEPS:
   },
 
   async callAPI(prompt, senderId) {
-    const primaryConfig = this.getApiConfig();
-    const fallbackConfig = this.getFallbackApiConfig();
+    const primary = this.getApiConfig();
+    const fallback = this.getFallbackApiConfig();
 
     try {
       console.log('[API] Trying primary API...');
-      const response = await this.executeApiCall(primaryConfig, prompt, senderId);
-      return response;
+      return await this.executeApiCall(primary, prompt, senderId);
     } catch (primaryError) {
       console.error('[API] Primary API failed:', primaryError.message);
       try {
         console.log('[API] Trying fallback API...');
-        const response = await this.executeApiCall(fallbackConfig, prompt, senderId);
-        return response;
+        return await this.executeApiCall(fallback, prompt, senderId);
       } catch (fallbackError) {
         console.error('[API] Fallback API also failed:', fallbackError.message);
         throw new Error('Both primary and fallback APIs failed.');
@@ -352,17 +1006,15 @@ NEXT STEPS:
       try {
         let response;
         if (config.method === 'GET') {
-          const encodedPrompt = encodeURIComponent(prompt);
-          const paramName = config.url.includes('opera') ? 'ask' : 'prompt';
-          const apiUrl = `${config.url}?${paramName}=${encodedPrompt}`;
-          
-          response = await axios.get(apiUrl, {
+          const encoded = encodeURIComponent(prompt);
+          const param = config.url.includes('opera') ? 'ask' : 'prompt';
+          const url = `${config.url}?${param}=${encoded}`;
+          response = await axios.get(url, {
             timeout: config.timeout,
             headers: { 'Accept': 'application/json', ...config.headers }
           });
         } else {
-          const payload = { prompt: prompt };
-          response = await axios.post(config.url, payload, {
+          response = await axios.post(config.url, { prompt }, {
             timeout: config.timeout,
             headers: { 'Content-Type': 'application/json', ...config.headers }
           });
@@ -423,7 +1075,6 @@ NEXT STEPS:
         return value;
       }
     }
-
     return null;
   },
 
@@ -438,21 +1089,11 @@ NEXT STEPS:
       .trim();
   },
 
-  // ==================== CONVERSATIONAL FUNCTIONS ====================
-
+  
   wantsDetailedAnswer(prompt) {
-    const lowerPrompt = prompt.toLowerCase();
-    const detailedKeywords = [
-      'explain more', 'more explanation', 'more details', 'detailed', 'detail',
-      'elaborate', 'elaborate more', 'paki elaborate', 'mas detalyado',
-      'tell me more', 'give more info', 'dagdagan', 'dagdag',
-      'further explain', 'further explanation', 'full explanation',
-      'complete explanation', 'in depth', 'in-depth', 'thorough',
-      'comprehensive', 'expound', 'pakilinaw', 'linawin',
-      'more information', 'additional info', 'karagdagang',
-      'can you explain further', 'please elaborate'
-    ];
-    return detailedKeywords.some(keyword => lowerPrompt.includes(keyword));
+    const lower = prompt.toLowerCase();
+    const keywords = ['explain more', 'more explanation', 'more details', 'detailed', 'detail', 'elaborate', 'elaborate more', 'paki elaborate', 'mas detalyado', 'tell me more', 'give more info', 'dagdagan', 'dagdag', 'further explain', 'further explanation', 'full explanation', 'complete explanation', 'in depth', 'in-depth', 'thorough', 'comprehensive', 'expound', 'pakilinaw', 'linawin', 'more information', 'additional info', 'karagdagang', 'can you explain further', 'please elaborate'];
+    return keywords.some(k => lower.includes(k));
   },
 
   shortenResponse(text) {
@@ -471,135 +1112,24 @@ NEXT STEPS:
 
   isContextualQuestion(prompt, previousPrompt) {
     if (!previousPrompt) return false;
-    const contextualPatterns = [
-      'so yan', 'so ito', 'so iyan', 'so yun', 'so ganyan', 'so ganito', 'so ganun',
-      'yan na ba', 'yun na ba', 'ito na ba', 'ganyan na ba', 'ganun na ba',
-      'tama ba', 'tama', 'correct', 'right',
-      'so tungkol', 'so sa', 'so para sa',
-      'so ibig sabihin', 'so meaning', 'so parang',
-      'so sa madaling salita', 'so in short',
-      'paano naman', 'what about', 'how about',
-      'paano kung', 'what if',
-      'bakit', 'why', 'paano', 'how', 'kailan', 'when', 'saan', 'where', 'sino', 'who', 'alin', 'which',
-      'ano', 'what', 'ano ba', 'what about',
-      'gets', 'gets ko', 'nagets', 'naintindihan',
-      'so gets', 'so naintindihan',
-      'ayun', 'ayon', 'ganun pala', 'ganyan pala',
-      'so ayun', 'so ayon',
-      'ok', 'okay', 'sige', 'cge',
-      'so okay', 'so sige',
-      'ah ganun', 'ah ganyan', 'ah okay',
-      'so ah', 'so okay',
-      'talaga', 'really', 'sure',
-      'so talaga', 'so sure',
-      'so that', 'so this', 'so it',
-      'so about', 'so regarding',
-      'so basically', 'so essentially',
-      'so you mean', 'so you saying',
-      'mao na', 'mao ni', 'mao to', 'mao diay',
-      'mao ba', 'mao jud', 'mao gyud',
-      'so mao', 'so mao na',
-      'sakto ba', 'sakto',
-      'ingon ana', 'ingon ani',
-      'so ingon', 'so ingon ana',
-      'unsa man', 'unsa',
-      'na gets', 'nakasabot', 'nasabtan',
-      'so nakasabot', 'so nasabtan',
-      'aw', 'aw okay', 'ah okay',
-      'so', 'sow', 'eh', 'e', 'a', 'ah', 'oh', 'ay',
-      'ha', 'heh', 'hmm', 'hm', 'mmm'
-    ];
-    const isRelated = contextualPatterns.some(pattern => prompt.includes(pattern));
+    const patterns = ['so yan', 'so ito', 'so iyan', 'so yun', 'so ganyan', 'so ganito', 'so ganun', 'yan na ba', 'yun na ba', 'ito na ba', 'ganyan na ba', 'ganun na ba', 'tama ba', 'tama', 'correct', 'right', 'so tungkol', 'so sa', 'so para sa', 'so ibig sabihin', 'so meaning', 'so parang', 'so sa madaling salita', 'so in short', 'paano naman', 'what about', 'how about', 'paano kung', 'what if', 'bakit', 'why', 'paano', 'how', 'kailan', 'when', 'saan', 'where', 'sino', 'who', 'alin', 'which', 'ano', 'what', 'ano ba', 'what about', 'gets', 'gets ko', 'nagets', 'naintindihan', 'so gets', 'so naintindihan', 'ayun', 'ayon', 'ganun pala', 'ganyan pala', 'so ayun', 'so ayon', 'ok', 'okay', 'sige', 'cge', 'so okay', 'so sige', 'ah ganun', 'ah ganyan', 'ah okay', 'so ah', 'so okay', 'talaga', 'really', 'sure', 'so talaga', 'so sure', 'so that', 'so this', 'so it', 'so about', 'so regarding', 'so basically', 'so essentially', 'so you mean', 'so you saying', 'mao na', 'mao ni', 'mao to', 'mao diay', 'mao ba', 'mao jud', 'mao gyud', 'so mao', 'so mao na', 'sakto ba', 'sakto', 'ingon ana', 'ingon ani', 'so ingon', 'so ingon ana', 'unsa man', 'unsa', 'na gets', 'nakasabot', 'nasabtan', 'so nakasabot', 'so nasabtan', 'aw', 'aw okay', 'ah okay', 'so', 'sow', 'eh', 'e', 'a', 'ah', 'oh', 'ay', 'ha', 'heh', 'hmm', 'hm', 'mmm'];
+    const isRelated = patterns.some(p => prompt.includes(p));
     const prevWords = previousPrompt.split(' ').filter(w => w.length > 2);
     const currentWords = prompt.split(' ').filter(w => w.length > 2);
-    const hasRelatedWords = prevWords.some(w => currentWords.some(cw => cw.includes(w) || w.includes(cw)));
-    return isRelated || hasRelatedWords;
+    const hasRelated = prevWords.some(w => currentWords.some(c => c.includes(w) || w.includes(c)));
+    return isRelated || hasRelated;
   },
 
   isFollowUpRequest(prompt) {
-    const keywords = [
-      'translate', 'translate to', 'translate into', 'translate in',
-      'translation', 'isalin', 'salin', 'ipasalin', 'isalin sa',
-      'transl', 'trans', 'tl', 'bis', 'ceb', 'eng', 'spa',
-      'tagalog', 'bisaya', 'cebuano', 'spanish', 'filipino',
-      'english', 'ilocano', 'waray', 'hiligaynon', 'kapampangan',
-      'elaborate', 'elaborate further', 'explain more', 'paki elaborate',
-      'paki explain', 'paliwanag', 'ipaliwanag', 'elab', 'explain',
-      'detail', 'further', 'more details', 'mas detalyado',
-      'summarize', 'summary', 'i-summarize', 'brief', 'make it short',
-      'short', 'concise', 'shorten', 'sum', 'ikli', 'paikliin',
-      'simplify', 'simple', 'pasimplehin', 'basic', 'simplified',
-      'simp', 'madali', 'dali', 'gawing simple',
-      'example', 'sample', 'halimbawa', 'instance', 'eg', 'ex', 'hal',
-      'give example', 'give examples', 'magbigay ng halimbawa',
-      'correct', 'fix', 'tama', 'ayusin', 'improve', 'better',
-      'improved', 'i-correct', 'i-fix', 'iwasto',
-      'add', 'additional', 'dagdagan', 'more', 'add more',
-      'dagdag', 'karagdagang',
-      'humanize', 'make it human', 'conversational', 'natural',
-      'make it natural', 'parang tao', 'human-like', 'human',
-      'gawing natural', 'gawing tao',
-      'tama ba', 'correct ba', 'right ba', 'sure ba', 'talaga',
-      'really', 'are you sure', 'sigurado ka',
-      'clarify', 'clarification', 'linawin', 'clear', 'make clear',
-      'ulit', 'repeat', 'say again', 'paulit', 'ulitin',
-      'paki-ulit', 'pakiulit', 'again',
-      'gets', 'nagets', 'naintindihan', 'understand',
-      'naiintindihan', 'gets ko', 'nagets ko', 'gots', 'got it',
-      'oo', 'opo', 'sige', 'cge', 'okay', 'ok',
-      'agree', 'yes', 'yeah', 'yep',
-      'hindi', 'dili', 'no', 'not', 'mali',
-      'disagree', 'hindi tama', 'mali yan',
-      'what', 'why', 'how', 'when', 'where', 'who', 'which',
-      'ano', 'bakit', 'paano', 'kailan', 'saan', 'sino', 'alin',
-      'wut', 'y', 'hau', 'wen', 'wer', 'hu', 'wich',
-      'anu', 'bkt', 'pano', 'klan', 'san', 'sinu', 'aln',
-      'kasi', 'dahil', 'kaya', 'nga', 'na', 'pa', 'ba',
-      'din', 'rin', 'lang', 'lng', 'naman', 'nman', 'nmn',
-      'talaga', 'tlga', 'tlag', 'sabi mo', 'sbi mo'
-    ];
-    return keywords.some(keyword => prompt.includes(keyword));
+    const keywords = ['translate', 'translate to', 'translate into', 'translate in', 'translation', 'isalin', 'salin', 'ipasalin', 'isalin sa', 'transl', 'trans', 'tl', 'bis', 'ceb', 'eng', 'spa', 'tagalog', 'bisaya', 'cebuano', 'spanish', 'filipino', 'english', 'ilocano', 'waray', 'hiligaynon', 'kapampangan', 'elaborate', 'elaborate further', 'explain more', 'paki elaborate', 'paki explain', 'paliwanag', 'ipaliwanag', 'elab', 'explain', 'detail', 'further', 'more details', 'mas detalyado', 'summarize', 'summary', 'i-summarize', 'brief', 'make it short', 'short', 'concise', 'shorten', 'sum', 'ikli', 'paikliin', 'simplify', 'simple', 'pasimplehin', 'basic', 'simplified', 'simp', 'madali', 'dali', 'gawing simple', 'example', 'sample', 'halimbawa', 'instance', 'eg', 'ex', 'hal', 'give example', 'give examples', 'magbigay ng halimbawa', 'correct', 'fix', 'tama', 'ayusin', 'improve', 'better', 'improved', 'i-correct', 'i-fix', 'iwasto', 'add', 'additional', 'dagdagan', 'more', 'add more', 'dagdag', 'karagdagang', 'humanize', 'make it human', 'conversational', 'natural', 'make it natural', 'parang tao', 'human-like', 'human', 'gawing natural', 'gawing tao', 'tama ba', 'correct ba', 'right ba', 'sure ba', 'talaga', 'really', 'are you sure', 'sigurado ka', 'clarify', 'clarification', 'linawin', 'clear', 'make clear', 'ulit', 'repeat', 'say again', 'paulit', 'ulitin', 'paki-ulit', 'pakiulit', 'again', 'gets', 'nagets', 'naintindihan', 'understand', 'naiintindihan', 'gets ko', 'nagets ko', 'gots', 'got it', 'oo', 'opo', 'sige', 'cge', 'okay', 'ok', 'agree', 'yes', 'yeah', 'yep', 'hindi', 'dili', 'no', 'not', 'mali', 'disagree', 'hindi tama', 'mali yan', 'what', 'why', 'how', 'when', 'where', 'who', 'which', 'ano', 'bakit', 'paano', 'kailan', 'saan', 'sino', 'alin', 'wut', 'y', 'hau', 'wen', 'wer', 'hu', 'wich', 'anu', 'bkt', 'pano', 'klan', 'san', 'sinu', 'aln', 'kasi', 'dahil', 'kaya', 'nga', 'na', 'pa', 'ba', 'din', 'rin', 'lang', 'lng', 'naman', 'nman', 'nmn', 'talaga', 'tlga', 'tlag', 'sabi mo', 'sbi mo'];
+    return keywords.some(k => prompt.includes(k));
   },
 
   isNewTopic(prompt, previousPrompt) {
     if (!previousPrompt) return true;
-    const newTopicIndicators = [
-      'hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening',
-      'kamusta', 'musta', 'kumusta', 'musta na', 'kumusta ka',
-      'oy', 'oi', 'hoy', 'ei', 'ey',
-      'good day', 'greetings', 'sup', 'whats up', 'whassup',
-      'magandang umaga', 'magandang tanghali', 'magandang hapon', 'magandang gabi',
-      'maayong buntag', 'maayong udto', 'maayong hapon', 'maayong gabii',
-      'ask', 'tanong', 'question', 'tungkol sa',
-      'about', 'regarding', 'sa', 'about sa',
-      'i want to ask', 'gusto kong itanong',
-      'can i ask', 'pwede magtanong',
-      'new topic', 'bagong topic',
-      'change topic', 'change subject', 'ibang topic', 'iba naman',
-      'next topic', 'lipat tayo', 'move on',
-      'what is', 'what are', 'what does', 'what do',
-      'ano ang', 'ano ba', 'ano yung', 'ano iyong',
-      'sino ang', 'sino ba', 'sino yung', 'sino iyong',
-      'bakit', 'paano', 'kailan', 'saan',
-      'why', 'how', 'when', 'where', 'who', 'which',
-      'tell me about', 'tell me', 'tell about',
-      'explain', 'define', 'describe',
-      'give me', 'give', 'show me',
-      'can you tell', 'could you tell',
-      'please explain', 'please tell',
-      'do you know', 'did you know',
-      'have you heard', 'have you seen',
-      'is it true', 'is that true',
-      'really', 'seriously',
-      'today', 'now', 'currently',
-      'recently', 'lately',
-      'nowadays', 'these days',
-      'this time', 'this day'
-    ];
-    if (prompt.length < 10 && !this.isFollowUpRequest(prompt)) {
-      return true;
-    }
-    return newTopicIndicators.some(indicator => prompt.includes(indicator));
+    const indicators = ['hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening', 'kamusta', 'musta', 'kumusta', 'musta na', 'kumusta ka', 'oy', 'oi', 'hoy', 'ei', 'ey', 'good day', 'greetings', 'sup', 'whats up', 'whassup', 'magandang umaga', 'magandang tanghali', 'magandang hapon', 'magandang gabi', 'maayong buntag', 'maayong udto', 'maayong hapon', 'maayong gabii', 'ask', 'tanong', 'question', 'tungkol sa', 'about', 'regarding', 'sa', 'about sa', 'i want to ask', 'gusto kong itanong', 'can i ask', 'pwede magtanong', 'new topic', 'bagong topic', 'change topic', 'change subject', 'ibang topic', 'iba naman', 'next topic', 'lipat tayo', 'move on', 'what is', 'what are', 'what does', 'what do', 'ano ang', 'ano ba', 'ano yung', 'ano iyong', 'sino ang', 'sino ba', 'sino yung', 'sino iyong', 'bakit', 'paano', 'kailan', 'saan', 'why', 'how', 'when', 'where', 'who', 'which', 'tell me about', 'tell me', 'tell about', 'explain', 'define', 'describe', 'give me', 'give', 'show me', 'can you tell', 'could you tell', 'please explain', 'please tell', 'do you know', 'did you know', 'have you heard', 'have you seen', 'is it true', 'is that true', 'really', 'seriously', 'today', 'now', 'currently', 'recently', 'lately', 'nowadays', 'these days', 'this time', 'this day'];
+    if (prompt.length < 10 && !this.isFollowUpRequest(prompt)) return true;
+    return indicators.some(i => prompt.includes(i));
   },
 
   cleanOldHistory() {
@@ -613,175 +1143,147 @@ NEXT STEPS:
   },
 
   buildFinalPrompt(prompt, previousResponse, previousPrompt, isReply, wantsDetailed) {
-    let finalPrompt = '';
+    let final = '';
 
     if (previousResponse) {
-      finalPrompt += 'Previous conversation context:\n';
-      finalPrompt += 'User asked: ' + (previousPrompt || 'unknown') + '\n';
-      finalPrompt += 'AI responded: ' + previousResponse + '\n\n';
+      final += 'Previous conversation context:\n';
+      final += 'User asked: ' + (previousPrompt || 'unknown') + '\n';
+      final += 'AI responded: ' + previousResponse + '\n\n';
       
-      const lowerPrompt = prompt.toLowerCase();
+      const lower = prompt.toLowerCase();
 
-      if (this.isContextualQuestion(lowerPrompt, previousPrompt)) {
-        finalPrompt += 'User is asking a follow-up question about the previous topic.\n';
-        finalPrompt += 'The user wants to clarify, confirm, or continue the discussion about the previous response.\n';
-        finalPrompt += 'Provide a direct answer that continues the conversation naturally.\n';
-        finalPrompt += 'Acknowledge the previous context and respond as if having a natural conversation.\n\n';
+      if (this.isContextualQuestion(lower, previousPrompt)) {
+        final += 'User is asking a follow-up question about the previous topic.\n';
+        final += 'The user wants to clarify, confirm, or continue the discussion about the previous response.\n';
+        final += 'Provide a direct answer that continues the conversation naturally.\n';
+        final += 'Acknowledge the previous context and respond as if having a natural conversation.\n\n';
       }
 
       if (this.isTranslationRequest(prompt)) {
         const lang = this.detectTargetLanguage(prompt);
-        finalPrompt += 'User wants to translate the previous response to ' + lang + '.\n';
-        finalPrompt += 'Provide the translation to ' + lang + ' only. Do not include the original text.\n\n';
-      } else if (lowerPrompt.includes('humanize') || lowerPrompt.includes('make it human') || 
-                 lowerPrompt.includes('conversational') || lowerPrompt.includes('natural') ||
-                 lowerPrompt.includes('make it natural') || lowerPrompt.includes('parang tao') ||
-                 lowerPrompt.includes('human-like') || lowerPrompt.includes('human')) {
-        finalPrompt += 'User wants you to make your previous response more human and conversational.\n';
-        finalPrompt += 'Rewrite it in a natural, friendly, and engaging tone.\n';
-        finalPrompt += 'Use simple language, add personality, and make it sound like a real person talking.\n\n';
-      } else if (lowerPrompt.includes('elaborate') || lowerPrompt.includes('explain more') || 
-                 lowerPrompt.includes('paki elaborate') || lowerPrompt.includes('detail') ||
-                 lowerPrompt.includes('further') || lowerPrompt.includes('paliwanag') ||
-                 lowerPrompt.includes('ipaliwanag') || lowerPrompt.includes('elab') ||
-                 lowerPrompt.includes('more details') || lowerPrompt.includes('mas detalyado')) {
-        finalPrompt += 'User wants you to elaborate on your previous response.\n';
-        finalPrompt += 'Provide a detailed explanation with more information, context, and examples.\n';
-        finalPrompt += 'Expand on each point thoroughly.\n\n';
-      } else if (lowerPrompt.includes('summarize') || lowerPrompt.includes('summary') || 
-                 lowerPrompt.includes('i-summarize') || lowerPrompt.includes('brief') ||
-                 lowerPrompt.includes('make it short') || lowerPrompt.includes('short') ||
-                 lowerPrompt.includes('concise') || lowerPrompt.includes('shorten') ||
-                 lowerPrompt.includes('paikliin') || lowerPrompt.includes('ikli') ||
-                 lowerPrompt.includes('sum')) {
-        finalPrompt += 'User wants a concise summary of your previous response.\n';
-        finalPrompt += 'Provide only the most important key points in a short, clear, and direct manner.\n\n';
-      } else if (lowerPrompt.includes('simplify') || lowerPrompt.includes('simple') || 
-                 lowerPrompt.includes('pasimplehin') || lowerPrompt.includes('basic') ||
-                 lowerPrompt.includes('simplified') || lowerPrompt.includes('madali') ||
-                 lowerPrompt.includes('simp')) {
-        finalPrompt += 'User wants a simpler explanation.\n';
-        finalPrompt += 'Explain using simple words and layman terms.\n\n';
-      } else if (lowerPrompt.includes('example') || lowerPrompt.includes('sample') || 
-                 lowerPrompt.includes('halimbawa') || lowerPrompt.includes('instance') ||
-                 lowerPrompt.includes('eg') || lowerPrompt.includes('ex') || lowerPrompt.includes('hal')) {
-        finalPrompt += 'User wants examples related to your previous response.\n';
-        finalPrompt += 'Provide relevant examples to illustrate your points.\n\n';
-      } else if (lowerPrompt.includes('correct') || lowerPrompt.includes('fix') || 
-                 lowerPrompt.includes('tama') || lowerPrompt.includes('ayusin') ||
-                 lowerPrompt.includes('improve') || lowerPrompt.includes('better')) {
-        finalPrompt += 'User wants you to correct or improve your previous response.\n';
-        finalPrompt += 'Review and provide an improved version.\n\n';
-      } else if (lowerPrompt.includes('add') || lowerPrompt.includes('additional') || 
-                 lowerPrompt.includes('dagdagan') || lowerPrompt.includes('more') ||
-                 lowerPrompt.includes('dagdag')) {
-        finalPrompt += 'User wants additional information.\n';
-        finalPrompt += 'Add more details, examples, or context.\n\n';
-      } else if (lowerPrompt.includes('ulit') || lowerPrompt.includes('repeat') || 
-                 lowerPrompt.includes('again') || lowerPrompt.includes('paki-ulit')) {
-        finalPrompt += 'User wants you to repeat or re-explain your previous response.\n';
-        finalPrompt += 'Provide the same information but in a clearer way.\n\n';
-      } else if (lowerPrompt.includes('gets') || lowerPrompt.includes('nagets') || 
-                 lowerPrompt.includes('naintindihan') || lowerPrompt.includes('understand') ||
-                 lowerPrompt.includes('gots')) {
-        finalPrompt += 'User is acknowledging understanding of your previous response.\n';
-        finalPrompt += 'Respond positively and offer to provide more information if needed.\n\n';
-      } else if (lowerPrompt.includes('tama ba') || lowerPrompt.includes('correct ba') || 
-                 lowerPrompt.includes('sure ba') || lowerPrompt.includes('talaga') ||
-                 lowerPrompt.includes('really')) {
-        finalPrompt += 'User is asking for confirmation about your previous response.\n';
-        finalPrompt += 'Confirm if your previous response is accurate and provide additional proof if needed.\n\n';
-      } else if (lowerPrompt.includes('oo') || lowerPrompt.includes('opo') || 
-                 lowerPrompt.includes('sige') || lowerPrompt.includes('cge') ||
-                 lowerPrompt.includes('okay') || lowerPrompt.includes('yes') ||
-                 lowerPrompt.includes('agree')) {
-        finalPrompt += 'User is agreeing with your previous response.\n';
-        finalPrompt += 'Acknowledge the agreement and offer to provide more information.\n\n';
-      } else if (lowerPrompt.includes('hindi') || lowerPrompt.includes('dili') || 
-                 lowerPrompt.includes('no') || lowerPrompt.includes('not') ||
-                 lowerPrompt.includes('mali') || lowerPrompt.includes('disagree')) {
-        finalPrompt += 'User is disagreeing or questioning your previous response.\n';
-        finalPrompt += 'Acknowledge the disagreement and provide clarification or additional evidence.\n\n';
+        final += 'User wants to translate the previous response to ' + lang + '.\n';
+        final += 'Provide the translation to ' + lang + ' only. Do not include the original text.\n\n';
+      } else if (lower.includes('humanize') || lower.includes('make it human') || 
+                 lower.includes('conversational') || lower.includes('natural') ||
+                 lower.includes('make it natural') || lower.includes('parang tao') ||
+                 lower.includes('human-like') || lower.includes('human')) {
+        final += 'User wants you to make your previous response more human and conversational.\n';
+        final += 'Rewrite it in a natural, friendly, and engaging tone.\n';
+        final += 'Use simple language, add personality, and make it sound like a real person talking.\n\n';
+      } else if (lower.includes('elaborate') || lower.includes('explain more') || 
+                 lower.includes('paki elaborate') || lower.includes('detail') ||
+                 lower.includes('further') || lower.includes('paliwanag') ||
+                 lower.includes('ipaliwanag') || lower.includes('elab') ||
+                 lower.includes('more details') || lower.includes('mas detalyado')) {
+        final += 'User wants you to elaborate on your previous response.\n';
+        final += 'Provide a detailed explanation with more information, context, and examples.\n';
+        final += 'Expand on each point thoroughly.\n\n';
+      } else if (lower.includes('summarize') || lower.includes('summary') || 
+                 lower.includes('i-summarize') || lower.includes('brief') ||
+                 lower.includes('make it short') || lower.includes('short') ||
+                 lower.includes('concise') || lower.includes('shorten') ||
+                 lower.includes('paikliin') || lower.includes('ikli') ||
+                 lower.includes('sum')) {
+        final += 'User wants a concise summary of your previous response.\n';
+        final += 'Provide only the most important key points in a short, clear, and direct manner.\n\n';
+      } else if (lower.includes('simplify') || lower.includes('simple') || 
+                 lower.includes('pasimplehin') || lower.includes('basic') ||
+                 lower.includes('simplified') || lower.includes('madali') ||
+                 lower.includes('simp')) {
+        final += 'User wants a simpler explanation.\n';
+        final += 'Explain using simple words and layman terms.\n\n';
+      } else if (lower.includes('example') || lower.includes('sample') || 
+                 lower.includes('halimbawa') || lower.includes('instance') ||
+                 lower.includes('eg') || lower.includes('ex') || lower.includes('hal')) {
+        final += 'User wants examples related to your previous response.\n';
+        final += 'Provide relevant examples to illustrate your points.\n\n';
+      } else if (lower.includes('correct') || lower.includes('fix') || 
+                 lower.includes('tama') || lower.includes('ayusin') ||
+                 lower.includes('improve') || lower.includes('better')) {
+        final += 'User wants you to correct or improve your previous response.\n';
+        final += 'Review and provide an improved version.\n\n';
+      } else if (lower.includes('add') || lower.includes('additional') || 
+                 lower.includes('dagdagan') || lower.includes('more') ||
+                 lower.includes('dagdag')) {
+        final += 'User wants additional information.\n';
+        final += 'Add more details, examples, or context.\n\n';
+      } else if (lower.includes('ulit') || lower.includes('repeat') || 
+                 lower.includes('again') || lower.includes('paki-ulit')) {
+        final += 'User wants you to repeat or re-explain your previous response.\n';
+        final += 'Provide the same information but in a clearer way.\n\n';
+      } else if (lower.includes('gets') || lower.includes('nagets') || 
+                 lower.includes('naintindihan') || lower.includes('understand') ||
+                 lower.includes('gots')) {
+        final += 'User is acknowledging understanding of your previous response.\n';
+        final += 'Respond positively and offer to provide more information if needed.\n\n';
+      } else if (lower.includes('tama ba') || lower.includes('correct ba') || 
+                 lower.includes('sure ba') || lower.includes('talaga') ||
+                 lower.includes('really')) {
+        final += 'User is asking for confirmation about your previous response.\n';
+        final += 'Confirm if your previous response is accurate and provide additional proof if needed.\n\n';
+      } else if (lower.includes('oo') || lower.includes('opo') || 
+                 lower.includes('sige') || lower.includes('cge') ||
+                 lower.includes('okay') || lower.includes('yes') ||
+                 lower.includes('agree')) {
+        final += 'User is agreeing with your previous response.\n';
+        final += 'Acknowledge the agreement and offer to provide more information.\n\n';
+      } else if (lower.includes('hindi') || lower.includes('dili') || 
+                 lower.includes('no') || lower.includes('not') ||
+                 lower.includes('mali') || lower.includes('disagree')) {
+        final += 'User is disagreeing or questioning your previous response.\n';
+        final += 'Acknowledge the disagreement and provide clarification or additional evidence.\n\n';
       } else {
-        finalPrompt += 'User is continuing the conversation about the previous topic.\n';
-        finalPrompt += 'User says: ' + prompt + '\n';
-        finalPrompt += 'Provide a natural response that continues the discussion.\n';
-        finalPrompt += 'Acknowledge the previous context and respond directly to the user.\n\n';
+        final += 'User is continuing the conversation about the previous topic.\n';
+        final += 'User says: ' + prompt + '\n';
+        final += 'Provide a natural response that continues the discussion.\n';
+        final += 'Acknowledge the previous context and respond directly to the user.\n\n';
       }
     } else {
-      finalPrompt = prompt;
+      final = prompt;
     }
 
     if (wantsDetailed) {
-      finalPrompt += 'USER WANTS DETAILED ANSWER: Provide a comprehensive, thorough, and detailed explanation.\n';
-      finalPrompt += 'Include examples, context, and complete information.\n\n';
+      final += 'USER WANTS DETAILED ANSWER: Provide a comprehensive, thorough, and detailed explanation.\n';
+      final += 'Include examples, context, and complete information.\n\n';
     } else {
-      finalPrompt += 'USER WANTS CONCISE ANSWER: Provide a SHORT, DIRECT, and ACCURATE response.\n';
-      finalPrompt += 'Be straight to the point. Maximum 2-3 sentences or 1-2 paragraphs.\n';
-      finalPrompt += 'No unnecessary explanations. Just the key facts.\n\n';
+      final += 'USER WANTS CONCISE ANSWER: Provide a SHORT, DIRECT, and ACCURATE response.\n';
+      final += 'Be straight to the point. Maximum 2-3 sentences or 1-2 paragraphs.\n';
+      final += 'No unnecessary explanations. Just the key facts.\n\n';
     }
 
-    finalPrompt += 'IMPORTANT GUIDELINES:\n';
-    finalPrompt += '- Be accurate and precise in your response.\n';
-    finalPrompt += '- For math problems, show step-by-step solution.\n';
-    finalPrompt += '- For analysis, provide clear description.\n';
-    finalPrompt += '- Use plain text only. No symbols or markdown.\n';
-    finalPrompt += '- If unsure, state that clearly.\n';
-    finalPrompt += '- Do not ask questions back. Just provide the complete response.\n';
-    finalPrompt += '- Continue the conversation naturally.\n';
-    finalPrompt += '- Be friendly and engaging.\n';
+    final += 'IMPORTANT GUIDELINES:\n';
+    final += '- Be accurate and precise in your response.\n';
+    final += '- For math problems, show step-by-step solution.\n';
+    final += '- For analysis, provide clear description.\n';
+    final += '- Use plain text only. No symbols or markdown.\n';
+    final += '- If unsure, state that clearly.\n';
+    final += '- Do not ask questions back. Just provide the complete response.\n';
+    final += '- Continue the conversation naturally.\n';
+    final += '- Be friendly and engaging.\n';
 
-    return finalPrompt;
+    return final;
   },
 
   isOwnerQuestion(prompt) {
-    const keywords = [
-      'who is your owner', 'who created you', 'who made you',
-      'sino gumawa sayo', 'sino may ari sayo', 'owner mo',
-      'sino owner mo', 'who owns you', 'creator', 'developer'
-    ];
-    return keywords.some(keyword => prompt.toLowerCase().includes(keyword.toLowerCase()));
+    const keywords = ['who is your owner', 'who created you', 'who made you', 'sino gumawa sayo', 'sino may ari sayo', 'owner mo', 'sino owner mo', 'who owns you', 'creator', 'developer'];
+    return keywords.some(k => prompt.toLowerCase().includes(k));
   },
 
   isUserInfoQuestion(prompt) {
-    const keywords = [
-      'what is my name', 'ano pangalan ko', 'my name', 'pangalan ko',
-      'when is my birthday', 'kelan birthday ko', 'my birthday',
-      'who am i', 'sino ako', 'whats my name'
-    ];
-    return keywords.some(keyword => prompt.toLowerCase().includes(keyword.toLowerCase()));
+    const keywords = ['what is my name', 'ano pangalan ko', 'my name', 'pangalan ko', 'when is my birthday', 'kelan birthday ko', 'my birthday', 'who am i', 'sino ako', 'whats my name'];
+    return keywords.some(k => prompt.toLowerCase().includes(k));
   },
 
   isTranslationRequest(prompt) {
-    const keywords = [
-      'translate', 'translate to', 'translate into', 'translate in',
-      'translation', 'isalin', 'salin', 'ipasalin', 'isalin sa',
-      'transl', 'trans'
-    ];
-    const promptLower = prompt.toLowerCase();
-    if (keywords.some(keyword => promptLower.includes(keyword))) {
-      return true;
-    }
-    const languages = [
-      'tagalog', 'bisaya', 'cebuano', 'spanish', 'filipino',
-      'english', 'ilocano', 'waray', 'hiligaynon', 'kapampangan',
-      'pangasinan', 'bicolano', 'chinese', 'mandarin', 'cantonese',
-      'japanese', 'nihongo', 'korean', 'hangeul', 'french',
-      'francais', 'german', 'deutsch', 'italian', 'italiano',
-      'portuguese', 'russian', 'arabic', 'hindi', 'urdu',
-      'bengali', 'tamil', 'telugu', 'marathi', 'gujarati',
-      'kannada', 'malayalam', 'thai', 'vietnamese', 'indonesian',
-      'malay', 'burmese', 'khmer', 'lao', 'nepali', 'sinhala',
-      'armenian', 'hebrew', 'greek', 'latin', 'dutch', 'swedish',
-      'norwegian', 'danish', 'finnish', 'polish', 'czech',
-      'hungarian', 'romanian', 'bulgarian', 'serbian', 'croatian',
-      'tl', 'bis', 'ceb', 'eng', 'spa'
-    ];
-    return languages.some(lang => promptLower.includes(lang));
+    const keywords = ['translate', 'translate to', 'translate into', 'translate in', 'translation', 'isalin', 'salin', 'ipasalin', 'isalin sa', 'transl', 'trans'];
+    const lower = prompt.toLowerCase();
+    if (keywords.some(k => lower.includes(k))) return true;
+    const languages = ['tagalog', 'bisaya', 'cebuano', 'spanish', 'filipino', 'english', 'ilocano', 'waray', 'hiligaynon', 'kapampangan', 'pangasinan', 'bicolano', 'chinese', 'mandarin', 'cantonese', 'japanese', 'nihongo', 'korean', 'hangeul', 'french', 'francais', 'german', 'deutsch', 'italian', 'italiano', 'portuguese', 'russian', 'arabic', 'hindi', 'urdu', 'bengali', 'tamil', 'telugu', 'marathi', 'gujarati', 'kannada', 'malayalam', 'thai', 'vietnamese', 'indonesian', 'malay', 'burmese', 'khmer', 'lao', 'nepali', 'sinhala', 'armenian', 'hebrew', 'greek', 'latin', 'dutch', 'swedish', 'norwegian', 'danish', 'finnish', 'polish', 'czech', 'hungarian', 'romanian', 'bulgarian', 'serbian', 'croatian', 'tl', 'bis', 'ceb', 'eng', 'spa'];
+    return languages.some(l => lower.includes(l));
   },
 
   detectTargetLanguage(prompt) {
-    const promptLower = prompt.toLowerCase();
+    const lower = prompt.toLowerCase();
     const languages = {
       'tagalog': 'Tagalog', 'filipino': 'Filipino',
       'bisaya': 'Bisaya', 'cebuano': 'Cebuano',
@@ -817,9 +1319,7 @@ NEXT STEPS:
       'croatian': 'Croatian'
     };
     for (const [key, value] of Object.entries(languages)) {
-      if (promptLower.includes(key)) {
-        return value;
-      }
+      if (lower.includes(key)) return value;
     }
     return 'English';
   },
@@ -834,8 +1334,6 @@ NEXT STEPS:
       return text;
     }
   },
-
-  // ==================== HELPER FUNCTIONS ====================
 
   async getRepliedMessageData(mid, token) {
     try {
@@ -957,18 +1455,10 @@ NEXT STEPS:
   },
 
   getErrorMessage(error) {
-    if (error.code === 'ECONNABORTED') {
-      return 'Request timeout. Please try again.';
-    }
-    if (error.response?.status === 429) {
-      return 'Rate limit exceeded. Please wait a moment.';
-    }
-    if (error.response?.status === 403) {
-      return 'API key invalid or expired.';
-    }
-    if (error.response?.status >= 500) {
-      return 'Server error. Please try again later.';
-    }
+    if (error.code === 'ECONNABORTED') return 'Request timeout. Please try again.';
+    if (error.response?.status === 429) return 'Rate limit exceeded. Please wait a moment.';
+    if (error.response?.status === 403) return 'API key invalid or expired.';
+    if (error.response?.status >= 500) return 'Server error. Please try again later.';
     return 'Error processing request. Please try again.';
   },
 
