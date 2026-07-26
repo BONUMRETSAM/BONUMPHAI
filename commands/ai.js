@@ -90,7 +90,7 @@ module.exports = {
 
       if (!prompt && !isReply && !imageUrl) {
         await sendMessage(senderId, {
-          text: 'Hello! I am Teacher Arlene - Multi-Modal AI.\n\nCapabilities:\nText conversations\nImage analysis\nAcademic research\nImage generation\nMusic search\nLyrics search\nTranslation\nSummarization\n\nCommands:\nai [question]\nSend an image for analysis\ngenerate [search term] [number]\ngscholar [search query]\nplay [song title]\nlyrics [song title] by [artist]'
+          text: 'Hello! I am Teacher Arlene - Multi-Modal AI.\n\nCapabilities:\nText conversations\nImage analysis\nAcademic research\nImage generation\nMusic search\nLyrics search\nReal-life situations\nTranslation\nSummarization\n\nCommands:\nai [question]\nSend an image for analysis\ngenerate [search term] [number]\ngscholar [search query]\nplay [song title]\nlyrics [song title] by [artist]'
         }, token);
         return;
       }
@@ -140,6 +140,148 @@ module.exports = {
     } catch (error) {
       console.error('[ai] Error:', error.message);
       await sendMessage(senderId, { text: this.getErrorMessage(error) }, token);
+    }
+  },
+
+  isRealtimeQuestion(prompt) {
+    const lower = prompt.toLowerCase();
+    const keywords = ['oras', 'time', 'petsa', 'date', 'ngayon', 'now', 'kasalukuyan', 'current', 'real time', 'real-time', 'anong oras', 'what time', 'what is the time', 'anong petsa', 'what date', 'what is the date', 'linggo', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'araw', 'day', 'umaga', 'hapon', 'gabi', 'madaling araw', 'balita', 'news', 'update', 'latest', 'pinakahuling', 'nangyari', 'happening', 'events', 'pangyayari', 'presyo ng', 'price of', 'gastos', 'cost', 'bilihin', 'kuryente', 'electricity', 'tubig', 'water', 'gasolina', 'gas', 'bigas', 'rice', 'asukal', 'sugar', 'mantika', 'oil', 'sibuyas', 'onion', 'bawang', 'garlic', 'senado', 'senate', 'kongreso', 'congress', 'pulitika', 'politics', 'gobyerno', 'government', 'presidente', 'president', 'bise presidente', 'vice president', 'magulo', 'gulo', 'trouble', 'chaos', 'kaguluhan', 'krisis', 'crisis', 'problema', 'problem', 'situwasyon', 'situation', 'lagay', 'condition', 'panahon', 'weather', 'ulan', 'rain', 'araw', 'sun', 'bagyo', 'typhoon', 'init', 'heat', 'lamig', 'cold', 'baha', 'flood', 'lindol', 'earthquake', 'pagputok', 'volcano', 'ano', 'what', 'kailan', 'when', 'saan', 'where', 'bakit', 'why', 'paano', 'how', 'magkano', 'how much', 'may', 'is there', 'meron', 'wala', 'none', 'report', 'reports', 'ulat', 'balita ngayon', 'ngayong araw', 'today', 'this day', 'this week'];
+    return keywords.some(k => lower.includes(k));
+  },
+
+  async handleRealtimeQuestion(senderId, prompt, token) {
+    if (this.isTimeRequest(prompt)) {
+      await this.handleTimeRequest(senderId, prompt, token);
+      return;
+    }
+
+    try {
+      const encodedPrompt = encodeURIComponent(prompt);
+      const apiUrl = `https://yin-api.vercel.app/ai/copilot?message=${encodedPrompt}&model=default`;
+      const response = await axios.get(apiUrl, {
+        timeout: 30000,
+        headers: { 'Accept': 'application/json' }
+      });
+
+      const data = response.data;
+      if (data && data.answer) {
+        let cleanResponse = this.cleanResponse(data.answer);
+        await this.sendChunks(senderId, cleanResponse, token);
+        return;
+      }
+    } catch (error) {
+      console.error('[RealTime] Yin API failed:', error.message);
+    }
+
+    try {
+      const encodedPrompt = encodeURIComponent(prompt);
+      const apiUrl = `https://free-goat-api.onrender.com/rapidai?message=${encodedPrompt}`;
+      const response = await axios.get(apiUrl, {
+        timeout: 30000,
+        headers: { 'Accept': 'application/json' }
+      });
+
+      const data = response.data;
+      if (data.status === true && data.result) {
+        let cleanResponse = this.cleanResponse(data.result);
+        await this.sendChunks(senderId, cleanResponse, token);
+        return;
+      }
+    } catch (error) {
+      console.error('[RealTime] Free-Goat API failed:', error.message);
+    }
+
+    try {
+      const now = new Date();
+      const options = {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'long',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      };
+      const localTime = now.toLocaleString('en-PH', options);
+      
+      let message = `Real-Time sa Pilipinas\n\nPetsa: ${localTime}\nTimezone: Asia/Manila (UTC+8)\nNote: Local system time\n\nUnable to fetch real-time information. Please try again later.`;
+      await this.sendChunks(senderId, message, token);
+    } catch (fallbackError) {
+      await sendMessage(senderId, { 
+        text: 'Unable to fetch real-time information. Please try again later.' 
+      }, token);
+    }
+  },
+
+  isTimeRequest(prompt) {
+    const lower = prompt.toLowerCase();
+    const keywords = ['oras', 'time', 'petsa', 'date', 'ngayon', 'now', 'kasalukuyan', 'current', 'real time', 'real-time', 'anong oras', 'what time', 'what is the time', 'anong petsa', 'what date', 'what is the date', 'linggo', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'araw', 'day', 'umaga', 'hapon', 'gabi', 'madaling araw'];
+    return keywords.some(k => lower.includes(k));
+  },
+
+  async handleTimeRequest(senderId, prompt, token) {
+    try {
+      const response = await axios.get('https://worldtimeapi.org/api/timezone/Asia/Manila', {
+        timeout: 10000
+      });
+
+      const data = response.data;
+      const datetime = data.datetime;
+      const date = new Date(datetime);
+      
+      const options = {
+        timeZone: 'Asia/Manila',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        weekday: 'long',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true
+      };
+      
+      const formattedTime = date.toLocaleString('en-PH', options);
+      const day = date.toLocaleString('en-PH', { weekday: 'long' });
+      const month = date.toLocaleString('en-PH', { month: 'long' });
+      const hour = date.getHours();
+      const minute = date.getMinutes();
+      const seconds = date.getSeconds();
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const hour12 = hour % 12 || 12;
+      
+      let message = `Real-Time sa Pilipinas\n\nPetsa: ${day}, ${month} ${date.getDate()}, ${date.getFullYear()}\nOras: ${hour12}:${minute.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm} (PHT)\nTimezone: Asia/Manila (UTC+8)\nDaylight Saving: Hindi ginagamit sa Pilipinas`;
+
+      await this.sendChunks(senderId, message, token);
+
+    } catch (error) {
+      console.error('[Time] WorldTimeAPI failed:', error.message);
+      
+      try {
+        const now = new Date();
+        const options = {
+          timeZone: 'Asia/Manila',
+          year: 'numeric',
+          month: 'long',
+          day: 'numeric',
+          weekday: 'long',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hour12: true
+        };
+        const fallbackTime = now.toLocaleString('en-PH', options);
+        
+        let message = `Real-Time sa Pilipinas\n\nPetsa: ${fallbackTime}\nTimezone: Asia/Manila (UTC+8)\nNote: Local system time`;
+
+        await this.sendChunks(senderId, message, token);
+      } catch (fallbackError) {
+        await sendMessage(senderId, { 
+          text: 'Unable to fetch real-time time. Please try again later.' 
+        }, token);
+      }
     }
   },
 
@@ -199,14 +341,9 @@ module.exports = {
       const songArtist = lyricsData.artist || artist || 'Unknown Artist';
       const lyrics = lyricsData.lyrics || 'Lyrics not available.';
 
-      // Format lyrics with sections
       let formattedLyrics = this.formatLyrics(lyrics);
 
-      let message = `🎵 ${songTitle}\n`;
-      message += `👤 Artist: ${songArtist}\n\n`;
-      message += `${formattedLyrics}\n\n`;
-      message += `✅ Complete lyrics\n`;
-      message += `🕐 ${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`;
+      let message = `${songTitle}\nArtist: ${songArtist}\n\n${formattedLyrics}\n\nComplete lyrics\n${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`;
 
       await this.sendChunks(senderId, message, token);
 
@@ -220,7 +357,6 @@ module.exports = {
 
   formatLyrics(lyrics) {
     let formatted = lyrics;
-    // Add section headers if missing
     if (!formatted.includes('[Verse') && !formatted.includes('[Chorus') && !formatted.includes('[Bridge')) {
       const lines = formatted.split('\n');
       let sectionCount = 0;
@@ -239,7 +375,6 @@ module.exports = {
           isFirst = false;
           sectionCount++;
         } else if (line.length > 0 && (line.match(/[.!?]$/) || i === lines.length - 1)) {
-          // Check if it looks like a chorus (repetition)
           if (i > 0 && lines[i-1] === line) {
             newLines.push(`[Chorus]`);
             newLines.push(line);
@@ -255,137 +390,6 @@ module.exports = {
     return formatted;
   },
 
-  isRealtimeQuestion(prompt) {
-    const lower = prompt.toLowerCase();
-    const keywords = ['oras', 'time', 'petsa', 'date', 'ngayon', 'now', 'kasalukuyan', 'current', 'real time', 'real-time', 'anong oras', 'what time', 'what is the time', 'anong petsa', 'what date', 'what is the date', 'linggo', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'araw', 'day', 'umaga', 'hapon', 'gabi', 'madaling araw', 'balita', 'news', 'update', 'latest', 'pinakahuling', 'nangyari', 'happening', 'events', 'presyo ng', 'price of', 'gastos', 'cost', 'bilihin', 'kuryente', 'electricity', 'tubig', 'water', 'gasolina', 'gas', 'bigas', 'rice', 'asukal', 'sugar', 'mantika', 'oil', 'sibuyas', 'onion', 'bawang', 'garlic', 'panahon', 'weather', 'ulan', 'rain', 'bagyo', 'typhoon', 'init', 'heat', 'lamig', 'cold', 'ano', 'what', 'kailan', 'when', 'saan', 'where', 'bakit', 'why', 'paano', 'how', 'magkano', 'how much', 'may', 'is there', 'meron', 'wala', 'none'];
-    return keywords.some(k => lower.includes(k));
-  },
-
-  async handleRealtimeQuestion(senderId, prompt, token) {
-    if (this.isTimeRequest(prompt)) {
-      await this.handleTimeRequest(senderId, prompt, token);
-      return;
-    }
-
-    try {
-      const encodedPrompt = encodeURIComponent(prompt);
-      const apiUrl = `https://free-goat-api.onrender.com/rapidai?message=${encodedPrompt}`;
-      const response = await axios.get(apiUrl, {
-        timeout: 30000,
-        headers: { 'Accept': 'application/json' }
-      });
-
-      const data = response.data;
-      if (data.status === true && data.result) {
-        let cleanResponse = this.cleanResponse(data.result);
-        await this.sendChunks(senderId, cleanResponse, token);
-        return;
-      }
-    } catch (error) {
-      console.error('[RealTime] Free-Goat API failed:', error.message);
-    }
-
-    try {
-      const encodedPrompt = encodeURIComponent(prompt);
-      const apiUrl = `https://api-library-kohi-production.up.railway.app/api/copilot?prompt=${encodedPrompt}&model=gpt-5&user=123`;
-      const response = await axios.get(apiUrl, {
-        timeout: 30000,
-        headers: { 'Accept': 'application/json' }
-      });
-
-      const data = response.data;
-      if (data.status === true && data.data && data.data.text) {
-        let cleanResponse = this.cleanResponse(data.data.text);
-        await this.sendChunks(senderId, cleanResponse, token);
-        return;
-      }
-    } catch (error) {
-      console.error('[RealTime] GPT-5 API failed:', error.message);
-    }
-
-    await sendMessage(senderId, { 
-      text: 'Unable to fetch real-time information. Please try again later.' 
-    }, token);
-  },
-
-  isTimeRequest(prompt) {
-    const lower = prompt.toLowerCase();
-    const keywords = ['oras', 'time', 'petsa', 'date', 'ngayon', 'now', 'kasalukuyan', 'current', 'real time', 'real-time', 'anong oras', 'what time', 'what is the time', 'anong petsa', 'what date', 'what is the date', 'linggo', 'sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'araw', 'day', 'umaga', 'hapon', 'gabi', 'madaling araw'];
-    return keywords.some(k => lower.includes(k));
-  },
-
-  async handleTimeRequest(senderId, prompt, token) {
-    try {
-      const response = await axios.get('https://worldtimeapi.org/api/timezone/Asia/Manila', {
-        timeout: 10000
-      });
-
-      const data = response.data;
-      const datetime = data.datetime;
-      const date = new Date(datetime);
-      
-      const options = {
-        timeZone: 'Asia/Manila',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        weekday: 'long',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: true
-      };
-      
-      const formattedTime = date.toLocaleString('en-PH', options);
-      const day = date.toLocaleString('en-PH', { weekday: 'long' });
-      const month = date.toLocaleString('en-PH', { month: 'long' });
-      const hour = date.getHours();
-      const minute = date.getMinutes();
-      const seconds = date.getSeconds();
-      const ampm = hour >= 12 ? 'PM' : 'AM';
-      const hour12 = hour % 12 || 12;
-      
-      let message = `Real-Time sa Pilipinas\n\n`;
-      message += `Petsa: ${day}, ${month} ${date.getDate()}, ${date.getFullYear()}\n`;
-      message += `Oras: ${hour12}:${minute.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')} ${ampm} (PHT)\n`;
-      message += `Timezone: Asia/Manila (UTC+8)\n`;
-      message += `Daylight Saving: Hindi ginagamit sa Pilipinas`;
-
-      await this.sendChunks(senderId, message, token);
-
-    } catch (error) {
-      console.error('[Time] WorldTimeAPI failed:', error.message);
-      
-      try {
-        const now = new Date();
-        const options = {
-          timeZone: 'Asia/Manila',
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-          weekday: 'long',
-          hour: '2-digit',
-          minute: '2-digit',
-          second: '2-digit',
-          hour12: true
-        };
-        const fallbackTime = now.toLocaleString('en-PH', options);
-        
-        let message = `Real-Time sa Pilipinas\n\n`;
-        message += `Petsa: ${fallbackTime}\n`;
-        message += `Timezone: Asia/Manila (UTC+8)\n`;
-        message += `Note: Local system time`;
-
-        await this.sendChunks(senderId, message, token);
-      } catch (fallbackError) {
-        await sendMessage(senderId, { 
-          text: 'Unable to fetch real-time time. Please try again later.' 
-        }, token);
-      }
-    }
-  },
-
-  
   isGenerateCommand(prompt) {
     const commands = ['generate', 'image', 'img', 'show'];
     const lower = prompt.toLowerCase().trim();
@@ -658,21 +662,15 @@ module.exports = {
         const apaCitation = this.generateAPA(authors, year, title, venue, volume, issue, pages, doi, scholarLink);
         const mlaCitation = this.generateMLA(authors, title, venue, year, scholarLink, doi, volume, issue, pages);
 
-        let message = `${i + 1}. ${title}\n\n`;
-        message += `Authors: ${displayAuthors}\n`;
-        message += `Published in: ${venue}\n`;
-        message += `Year: ${year}\n`;
-        if (volume) message += `Volume: ${volume}\n`;
-        if (issue) message += `Issue: ${issue}\n`;
-        if (pages) message += `Pages: ${pages}\n`;
-        message += `DOI: ${doi || 'Not available'}\n`;
-        if (citedBy !== '0') message += `Cited by: ${citedBy}\n`;
-        message += `Abstract: ${snippet.substring(0, 300)}${snippet.length > 300 ? '...' : ''}\n\n`;
+        let message = `${i + 1}. ${title}\n\nAuthors: ${displayAuthors}\nPublished in: ${venue}\nYear: ${year}`;
+        if (volume) message += `\nVolume: ${volume}`;
+        if (issue) message += `\nIssue: ${issue}`;
+        if (pages) message += `\nPages: ${pages}`;
+        message += `\nDOI: ${doi || 'Not available'}`;
+        if (citedBy !== '0') message += `\nCited by: ${citedBy}`;
+        message += `\nAbstract: ${snippet.substring(0, 300)}${snippet.length > 300 ? '...' : ''}\n\n`;
         if (scholarLink) message += `Google Scholar: ${scholarLink}\n\n`;
-        message += `APA 7th Edition:\n${apaCitation}\n\n`;
-        message += `MLA 9th Edition:\n${mlaCitation}\n\n`;
-        message += `Verified: Viewable and accessible\n`;
-        message += `${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`;
+        message += `APA 7th Edition:\n${apaCitation}\n\nMLA 9th Edition:\n${mlaCitation}\n\nVerified: Viewable and accessible\n${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`;
 
         await sendMessage(senderId, { text: message }, token);
         await new Promise(resolve => setTimeout(resolve, 500));
@@ -886,21 +884,14 @@ module.exports = {
         }
         if (!audioUrl && url) audioUrl = url;
 
-        message += `${i + 1}. ${title}\n`;
-        message += `Singer/Artist: ${artist}\n`;
-        message += `Genre: ${genre}\n`;
-        message += `Duration: ${duration}\n`;
-        message += `Released: ${created}\n`;
-        message += `Plays: ${plays.toLocaleString()}\n`;
-        message += `Likes: ${likes.toLocaleString()}\n`;
-        if (artwork) message += `Artwork: ${artwork}\n`;
-        message += `Listen: ${url}\n`;
-        if (audioUrl) message += `Direct Audio: ${audioUrl}\n`;
-        message += `\n`;
+        message += `${i + 1}. ${title}\nSinger/Artist: ${artist}\nGenre: ${genre}\nDuration: ${duration}\nReleased: ${created}\nPlays: ${plays.toLocaleString()}\nLikes: ${likes.toLocaleString()}`;
+        if (artwork) message += `\nArtwork: ${artwork}`;
+        message += `\nListen: ${url}`;
+        if (audioUrl) message += `\nDirect Audio: ${audioUrl}`;
+        message += `\n\n`;
       }
 
-      message += `Found ${totalResults} result(s)\n`;
-      message += `${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`;
+      message += `Found ${totalResults} result(s)\n${new Date().toLocaleString('en-PH', { timeZone: 'Asia/Manila' })}`;
 
       await this.sendChunks(senderId, message, token);
 
@@ -1447,7 +1438,6 @@ NEXT STEPS:
     }
   },
 
-  
   async getRepliedMessageData(mid, token) {
     try {
       const url = `https://graph.facebook.com/v21.0/${mid}`;
