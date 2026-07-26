@@ -5,10 +5,10 @@ const MAX_CHUNK = 1900;
 const conversationHistory = {};
 
 module.exports = {
-  name: ['ai', 'opera', 'ask'],
-  description: 'Chat with AI with reply/thread support',
-  usage: 'ai [message] or reply to AI message',
-  version: '2.0.0',
+  name: ['ai', 'opera', 'ask', 'gemini', 'vision'],
+  description: 'Multi-modal AI with text, image analysis, and conversational memory',
+  usage: 'ai [message] or send/reply to image',
+  version: '3.0.0',
   author: 'codex',
   category: 'AI',
   cooldown: 3,
@@ -19,16 +19,38 @@ module.exports = {
       let previousResponse = null;
       let isReply = false;
       let previousPrompt = null;
+      let imageUrl = null;
 
+      
       if (event?.message?.reply_to?.mid) {
         isReply = true;
         const replyData = await this.getRepliedMessageData(event.message.reply_to.mid, token);
         previousResponse = replyData.message;
+        imageUrl = replyData.imageUrl;
         if (!prompt) {
           prompt = 'Please respond to what I said.';
         }
       }
 
+      
+      if (!imageUrl && event?.message?.attachments) {
+        for (const attachment of event.message.attachments) {
+          if (attachment.type === 'image' || attachment.type === 'photo') {
+            imageUrl = attachment.payload?.url || attachment.url || null;
+            if (imageUrl) {
+              const urlObj = new URL(imageUrl);
+              urlObj.searchParams.set('access_token', token);
+              imageUrl = urlObj.toString();
+            }
+            break;
+          }
+        }
+        if (imageUrl && !prompt) {
+          prompt = 'Analyze this image.';
+        }
+      }
+
+      
       if (!isReply && prompt) {
         const history = conversationHistory[senderId];
         if (history && history.lastResponse) {
@@ -47,13 +69,15 @@ module.exports = {
         }
       }
 
-      if (!prompt && !isReply) {
+      
+      if (!prompt && !isReply && !imageUrl) {
         await sendMessage(senderId, {
-          text: 'Hello. I am Teacher Arlene from C0D3X SQU4D PENETRATORS, your AI Assistant. How can I assist you today?'
+          text: 'Hello! I am Teacher Arlene - Multi-Modal AI.\n\nCapabilities:\n• Text conversations\n• Image analysis\n• Translation\n• Summarization\n\nCommands:\n• ai [question]\n• Send an image for analysis\n• Reply to an image for analysis'
         }, token);
         return;
       }
 
+      
       if (this.isOwnerQuestion(prompt)) {
         await sendMessage(senderId, {
           text: 'I was created by GeoDevz69. Visit here for more clarifications:\nhttps://www.facebook.com/geotechph.net'
@@ -61,22 +85,31 @@ module.exports = {
         return;
       }
 
+      
       if (this.isUserInfoQuestion(prompt)) {
         await this.handleUserInfo(senderId, prompt, token);
         return;
       }
 
-      
       const wantsDetailed = this.wantsDetailedAnswer(prompt);
-      
-      const finalPrompt = this.buildFinalPrompt(prompt, previousResponse, previousPrompt, isReply, wantsDetailed);
-      const response = await this.callAPI(finalPrompt, senderId);
-      let aiResponse = this.cleanResponse(response || 'No response from API.');
+      let aiResponse = '';
 
-      if (!isReply && !wantsDetailed) {
+      
+      if (imageUrl) {
+        aiResponse = await this.callGeminiAPI(prompt, imageUrl);
+      } else {
+        
+        const finalPrompt = this.buildFinalPrompt(prompt, previousResponse, previousPrompt, isReply, wantsDetailed);
+        const response = await this.callAPI(finalPrompt, senderId);
+        aiResponse = this.cleanResponse(response || 'No response from API.');
+      }
+
+      
+      if (!imageUrl && !isReply && !wantsDetailed) {
         aiResponse = this.shortenResponse(aiResponse);
       }
 
+      
       conversationHistory[senderId] = {
         lastPrompt: prompt,
         lastResponse: aiResponse,
@@ -85,6 +118,7 @@ module.exports = {
 
       this.cleanOldHistory();
 
+      
       if (isReply && this.isTranslationRequest(prompt)) {
         const targetLanguage = this.detectTargetLanguage(prompt);
         aiResponse = await this.translateResponse(aiResponse, targetLanguage);
@@ -99,195 +133,173 @@ module.exports = {
   },
 
 
-  wantsDetailedAnswer(prompt) {
-    const lowerPrompt = prompt.toLowerCase();
-    const detailedKeywords = [
-      'explain more', 'more explanation', 'more details', 'detailed', 'detail',
-      'elaborate', 'elaborate more', 'paki elaborate', 'mas detalyado',
-      'tell me more', 'give more info', 'dagdagan', 'dagdag',
-      'further explain', 'further explanation', 'full explanation',
-      'complete explanation', 'in depth', 'in-depth', 'thorough',
-      'comprehensive', 'expound', 'pakilinaw', 'linawin',
-      'more information', 'additional info', 'karagdagang',
-      'can you explain further', 'please elaborate'
-    ];
-    return detailedKeywords.some(keyword => lowerPrompt.includes(keyword));
+
+  async callGeminiAPI(prompt, imageUrl) {
+    try {
+      const geminiPrompt = this.buildGeminiPrompt(prompt);
+      const apiUrl = `https://norch-project.gleeze.com/api/gemini?prompt=${encodeURIComponent(geminiPrompt)}&imageurl=${encodeURIComponent(imageUrl)}`;
+
+      let response = null;
+      let attempts = 0;
+      const maxAttempts = 3;
+
+      while (attempts < maxAttempts) {
+        try {
+          attempts++;
+          response = await axios.get(apiUrl, {
+            timeout: 90000,
+            headers: { 'Accept': 'application/json' },
+            maxContentLength: 50 * 1024 * 1024,
+            maxBodyLength: 50 * 1024 * 1024
+          });
+
+          if (response.status === 200 && response.data) {
+            break;
+          }
+        } catch (error) {
+          console.log(`[Gemini] Attempt ${attempts} failed:`, error.message);
+          if (attempts >= maxAttempts) throw error;
+          const delay = error.response?.status === 429 ? 10000 : error.response?.status >= 500 ? 5000 : 2000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
+
+      if (!response || !response.data) {
+        throw new Error('No response from Gemini API');
+      }
+
+      let processed = this.processGeminiResponse(response.data.response || '');
+      return processed || 'Unable to analyze the image. Please try again.';
+
+    } catch (error) {
+      console.error('[Gemini] Error:', error.message);
+      
+      const fallbackPrompt = `The user sent an image but the image analysis failed. The user asked: ${prompt || 'Please describe what you see'}. Please provide a helpful response.`;
+      const response = await this.callAPI(fallbackPrompt, 'gemini_fallback');
+      return this.cleanResponse(response || 'Unable to analyze the image. Please try again.');
+    }
   },
 
-  shortenResponse(text) {
-    if (!text) return text;
-    
-    const sentences = text.split(/(?<=[.!?])\s+/);
-    let concise = sentences.slice(0, 3).join(' ');
-    
-    if (concise.length > 400) {
-      concise = concise.substring(0, 400) + '...';
+  buildGeminiPrompt(userPrompt) {
+    let prompt = `Analyze this image and provide a comprehensive response.
+
+DETECT THE CONTENT TYPE and respond accordingly:
+
+CONTENT TYPES:
+- Educational: Provide analysis, learning tips, study strategies, real-world examples
+- Career/Professional: Provide career advice, skills needed, industry insights, growth strategies
+- Math/Science: Solve problems step-by-step, explain concepts, provide practice examples
+- Business/Marketing: Provide business insights, marketing strategies, growth tips
+- Health/Medical: Provide health tips, wellness advice, medical information
+- Technology: Provide tech insights, trends, learning resources
+- Arts/Creative: Provide creative tips, techniques, inspiration
+- General: Provide analysis, observations, helpful suggestions
+
+For EVERY response, include this structure:
+
+1. ANALYSIS - Detailed analysis of what you see
+2. THEREFORE / CORE POINT - The main conclusion, key insight, or final answer
+3. TIPS WITH EXAMPLES - Practical suggestions with specific examples
+4. NEXT STEPS - Actionable steps to take
+
+IMPORTANT RULES:
+- State the main takeaway clearly in THEREFORE
+- For problems: State the final answer
+- For analysis: State the core insight
+- For questions: State the direct answer
+- Use plain text only. No symbols, no markdown.
+
+RESPONSE FORMAT:
+ANALYSIS:
+[Detailed analysis of the image]
+
+THEREFORE:
+[The main conclusion, core point, final answer, or key insight]
+
+TIPS WITH EXAMPLES:
+1. [Tip] - Example: [Specific example]
+2. [Tip] - Example: [Specific example]
+
+NEXT STEPS:
+1. [Actionable step]
+2. [Actionable step]`;
+
+    if (userPrompt && !userPrompt.includes('Analyze this image')) {
+      prompt += `\n\nUSER QUESTION: ${userPrompt}`;
     }
-    
-    concise = concise
-      .replace(/^(In summary|To summarize|In conclusion|Basically|Essentially|Simply put|In other words|That said|Having said that|With that said)\s*,?\s*/i, '')
-      .replace(/\s{2,}/g, ' ')
+
+    return prompt;
+  },
+
+  processGeminiResponse(response) {
+    let processed = response || '';
+    processed = this.cleanGeminiFormatting(processed);
+    processed = this.ensureThereforeSection(processed);
+    return processed;
+  },
+
+  cleanGeminiFormatting(response) {
+    let cleaned = response;
+    cleaned = cleaned
+      .replace(/\$/g, '')
+      .replace(/\\[a-zA-Z]+/g, '')
+      .replace(/\*\*/g, '')
+      .replace(/\*/g, '')
+      .replace(/#{1,6}\s/g, '')
+      .replace(/`/g, '')
+      .replace(/_/g, '')
+      .replace(/~{2}/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/^I'?m?\s+a?\s*Gemini.*?model.*?\n\n?/i, '')
+      .replace(/^Here is my analysis.*?\n/i, '')
+      .replace(/^Let me analyze.*?\n/i, '')
+      .replace(/^The image appears to be.*?\n/i, '')
+      .replace(/^Based on my analysis.*?\n/i, '')
+      .replace(/^I can see that.*?\n/i, '')
+      .replace(/^This looks like.*?\n/i, '')
       .trim();
-    
-    return concise || text;
+    return cleaned;
   },
 
-  isContextualQuestion(prompt, previousPrompt) {
-    if (!previousPrompt) return false;
-    
-    const contextualPatterns = [
-      'so yan', 'so ito', 'so iyan', 'so yun', 'so ganyan', 'so ganito', 'so ganun',
-      'yan na ba', 'yun na ba', 'ito na ba', 'ganyan na ba', 'ganun na ba',
-      'tama ba', 'tama', 'correct', 'right',
-      'so tungkol', 'so sa', 'so para sa',
-      'so ibig sabihin', 'so meaning', 'so parang',
-      'so sa madaling salita', 'so in short',
-      'paano naman', 'what about', 'how about',
-      'paano kung', 'what if',
-      'bakit', 'why', 'paano', 'how', 'kailan', 'when', 'saan', 'where', 'sino', 'who', 'alin', 'which',
-      'ano', 'what', 'ano ba', 'what about',
-      'gets', 'gets ko', 'nagets', 'naintindihan',
-      'so gets', 'so naintindihan',
-      'ayun', 'ayon', 'ganun pala', 'ganyan pala',
-      'so ayun', 'so ayon',
-      'ok', 'okay', 'sige', 'cge',
-      'so okay', 'so sige',
-      'ah ganun', 'ah ganyan', 'ah okay',
-      'so ah', 'so okay',
-      'talaga', 'really', 'sure',
-      'so talaga', 'so sure',
-      'so that', 'so this', 'so it',
-      'so about', 'so regarding',
-      'so basically', 'so essentially',
-      'so you mean', 'so you saying',
-      'mao na', 'mao ni', 'mao to', 'mao diay',
-      'mao ba', 'mao jud', 'mao gyud',
-      'so mao', 'so mao na',
-      'sakto ba', 'sakto',
-      'ingon ana', 'ingon ani',
-      'so ingon', 'so ingon ana',
-      'unsa man', 'unsa',
-      'na gets', 'nakasabot', 'nasabtan',
-      'so nakasabot', 'so nasabtan',
-      'aw', 'aw okay', 'ah okay',
-      'so', 'sow', 'eh', 'e', 'a', 'ah', 'oh', 'ay',
-      'ha', 'heh', 'hmm', 'hm', 'mmm'
-    ];
-    
-    const isRelated = contextualPatterns.some(pattern => 
-      prompt.includes(pattern)
-    );
-    
-    const prevWords = previousPrompt.split(' ').filter(w => w.length > 2);
-    const currentWords = prompt.split(' ').filter(w => w.length > 2);
-    const hasRelatedWords = prevWords.some(w => 
-      currentWords.some(cw => cw.includes(w) || w.includes(cw))
-    );
-    
-    return isRelated || hasRelatedWords;
-  },
+  ensureThereforeSection(response) {
+    let withTherefore = response;
+    const lowerResponse = response.toLowerCase();
+    const hasTherefore = lowerResponse.includes('therefore') || 
+                         lowerResponse.includes('core point') ||
+                         lowerResponse.includes('main takeaway') ||
+                         lowerResponse.includes('final answer') ||
+                         lowerResponse.includes('key insight');
 
-  isFollowUpRequest(prompt) {
-    const keywords = [
-      'translate', 'translate to', 'translate into', 'translate in',
-      'translation', 'isalin', 'salin', 'ipasalin', 'isalin sa',
-      'transl', 'trans', 'tl', 'bis', 'ceb', 'eng', 'spa',
-      'tagalog', 'bisaya', 'cebuano', 'spanish', 'filipino',
-      'english', 'ilocano', 'waray', 'hiligaynon', 'kapampangan',
-      'elaborate', 'elaborate further', 'explain more', 'paki elaborate',
-      'paki explain', 'paliwanag', 'ipaliwanag', 'elab', 'explain',
-      'detail', 'further', 'more details', 'mas detalyado',
-      'summarize', 'summary', 'i-summarize', 'brief', 'make it short',
-      'short', 'concise', 'shorten', 'sum', 'ikli', 'paikliin',
-      'simplify', 'simple', 'pasimplehin', 'basic', 'simplified',
-      'simp', 'madali', 'dali', 'gawing simple',
-      'example', 'sample', 'halimbawa', 'instance', 'eg', 'ex', 'hal',
-      'give example', 'give examples', 'magbigay ng halimbawa',
-      'correct', 'fix', 'tama', 'ayusin', 'improve', 'better',
-      'improved', 'i-correct', 'i-fix', 'iwasto',
-      'add', 'additional', 'dagdagan', 'more', 'add more',
-      'dagdag', 'karagdagang',
-      'humanize', 'make it human', 'conversational', 'natural',
-      'make it natural', 'parang tao', 'human-like', 'human',
-      'gawing natural', 'gawing tao',
-      'tama ba', 'correct ba', 'right ba', 'sure ba', 'talaga',
-      'really', 'are you sure', 'sigurado ka',
-      'clarify', 'clarification', 'linawin', 'clear', 'make clear',
-      'ulit', 'repeat', 'say again', 'paulit', 'ulitin',
-      'paki-ulit', 'pakiulit', 'again',
-      'gets', 'nagets', 'naintindihan', 'understand',
-      'naiintindihan', 'gets ko', 'nagets ko', 'gots', 'got it',
-      'oo', 'opo', 'sige', 'cge', 'okay', 'ok',
-      'agree', 'yes', 'yeah', 'yep',
-      'hindi', 'dili', 'no', 'not', 'mali',
-      'disagree', 'hindi tama', 'mali yan',
-      'what', 'why', 'how', 'when', 'where', 'who', 'which',
-      'ano', 'bakit', 'paano', 'kailan', 'saan', 'sino', 'alin',
-      'wut', 'y', 'hau', 'wen', 'wer', 'hu', 'wich',
-      'anu', 'bkt', 'pano', 'klan', 'san', 'sinu', 'aln',
-      'kasi', 'dahil', 'kaya', 'nga', 'na', 'pa', 'ba',
-      'din', 'rin', 'lang', 'lng', 'naman', 'nman', 'nmn',
-      'talaga', 'tlga', 'tlag', 'sabi mo', 'sbi mo'
-    ];
-    
-    return keywords.some(keyword => prompt.includes(keyword));
-  },
+    if (!hasTherefore) {
+      const lines = response.split('\n');
+      let analysisEnd = 0;
+      let foundAnalysis = false;
 
-  isNewTopic(prompt, previousPrompt) {
-    if (!previousPrompt) return true;
-    
-    const newTopicIndicators = [
-      'hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening',
-      'kamusta', 'musta', 'kumusta', 'musta na', 'kumusta ka',
-      'oy', 'oi', 'hoy', 'ei', 'ey',
-      'good day', 'greetings', 'sup', 'whats up', 'whassup',
-      'magandang umaga', 'magandang tanghali', 'magandang hapon', 'magandang gabi',
-      'maayong buntag', 'maayong udto', 'maayong hapon', 'maayong gabii',
-      'ask', 'tanong', 'question', 'tungkol sa',
-      'about', 'regarding', 'sa', 'about sa',
-      'i want to ask', 'gusto kong itanong',
-      'can i ask', 'pwede magtanong',
-      'new topic', 'bagong topic',
-      'change topic', 'change subject', 'ibang topic', 'iba naman',
-      'next topic', 'lipat tayo', 'move on',
-      'what is', 'what are', 'what does', 'what do',
-      'ano ang', 'ano ba', 'ano yung', 'ano iyong',
-      'sino ang', 'sino ba', 'sino yung', 'sino iyong',
-      'bakit', 'paano', 'kailan', 'saan',
-      'why', 'how', 'when', 'where', 'who', 'which',
-      'tell me about', 'tell me', 'tell about',
-      'explain', 'define', 'describe',
-      'give me', 'give', 'show me',
-      'can you tell', 'could you tell',
-      'please explain', 'please tell',
-      'do you know', 'did you know',
-      'have you heard', 'have you seen',
-      'is it true', 'is that true',
-      'really', 'seriously',
-      'today', 'now', 'currently',
-      'recently', 'lately',
-      'nowadays', 'these days',
-      'this time', 'this day'
-    ];
-    
-    if (prompt.length < 10 && !this.isFollowUpRequest(prompt)) {
-      return true;
-    }
-    
-    return newTopicIndicators.some(indicator => 
-      prompt.includes(indicator)
-    );
-  },
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].toLowerCase().includes('analysis:') || 
+            lines[i].toLowerCase().includes('analysis')) {
+          foundAnalysis = true;
+          continue;
+        }
+        if (foundAnalysis && lines[i].trim() === '') {
+          analysisEnd = i;
+          break;
+        }
+      }
 
-  cleanOldHistory() {
-    const now = Date.now();
-    const maxAge = 30 * 60 * 1000;
-    for (const [userId, data] of Object.entries(conversationHistory)) {
-      if (now - data.timestamp > maxAge) {
-        delete conversationHistory[userId];
+      if (analysisEnd > 0) {
+        const before = lines.slice(0, analysisEnd).join('\n');
+        const after = lines.slice(analysisEnd).join('\n');
+        withTherefore = before + '\n\nTHEREFORE:\n[Core insight based on the analysis above]\n\n' + after;
+      } else {
+        withTherefore = 'THEREFORE:\n[Main conclusion from the image]\n\n' + response;
       }
     }
+    return withTherefore;
   },
+
+  // ==================== TEXT API WITH FALLBACK ====================
 
   getApiConfig() {
     return {
@@ -296,29 +308,69 @@ module.exports = {
       responsePath: 'data',
       successField: 'status',
       timeout: 60000,
-      imageSupport: false,
+      headers: {}
+    };
+  },
+
+  getFallbackApiConfig() {
+    return {
+      url: 'https://betadash-api-swordslush-production.up.railway.app/opera',
+      method: 'GET',
+      responsePath: 'message',
+      successField: 'success',
+      timeout: 30000,
       headers: {}
     };
   },
 
   async callAPI(prompt, senderId) {
-    const config = this.getApiConfig();
-    let retries = 3;
+    const primaryConfig = this.getApiConfig();
+    const fallbackConfig = this.getFallbackApiConfig();
+
+    try {
+      console.log('[API] Trying primary API...');
+      const response = await this.executeApiCall(primaryConfig, prompt, senderId);
+      return response;
+    } catch (primaryError) {
+      console.error('[API] Primary API failed:', primaryError.message);
+      try {
+        console.log('[API] Trying fallback API...');
+        const response = await this.executeApiCall(fallbackConfig, prompt, senderId);
+        return response;
+      } catch (fallbackError) {
+        console.error('[API] Fallback API also failed:', fallbackError.message);
+        throw new Error('Both primary and fallback APIs failed.');
+      }
+    }
+  },
+
+  async executeApiCall(config, prompt, senderId) {
+    let retries = 2;
     let lastError = null;
 
     while (retries > 0) {
       try {
-        const encodedPrompt = encodeURIComponent(prompt);
-      
-        const apiUrl = `${config.url}?prompt=${encodedPrompt}&model=openai&user=${senderId}`;
-        const response = await axios.get(apiUrl, {
-          timeout: config.timeout,
-          headers: { 'Accept': 'application/json', ...config.headers }
-        });
+        let response;
+        if (config.method === 'GET') {
+          const encodedPrompt = encodeURIComponent(prompt);
+          const paramName = config.url.includes('opera') ? 'ask' : 'prompt';
+          const apiUrl = `${config.url}?${paramName}=${encodedPrompt}`;
+          
+          response = await axios.get(apiUrl, {
+            timeout: config.timeout,
+            headers: { 'Accept': 'application/json', ...config.headers }
+          });
+        } else {
+          const payload = { prompt: prompt };
+          response = await axios.post(config.url, payload, {
+            timeout: config.timeout,
+            headers: { 'Content-Type': 'application/json', ...config.headers }
+          });
+        }
 
         const data = response.data;
-        if (data.status !== true) {
-          throw new Error('API returned error status');
+        if (data[config.successField] !== true) {
+          throw new Error(`API returned ${config.successField}: false`);
         }
 
         const extracted = this.extractResponse(data, config);
@@ -336,8 +388,7 @@ module.exports = {
         }
       }
     }
-
-    throw lastError || new Error('Failed to get response');
+    throw lastError || new Error(`Failed to get response from ${config.url}`);
   },
 
   extractResponse(data, config) {
@@ -385,6 +436,180 @@ module.exports = {
       .replace(/^Based on my knowledge.*?\n/i, '')
       .replace(/^I can help you.*?\n/i, '')
       .trim();
+  },
+
+  // ==================== CONVERSATIONAL FUNCTIONS ====================
+
+  wantsDetailedAnswer(prompt) {
+    const lowerPrompt = prompt.toLowerCase();
+    const detailedKeywords = [
+      'explain more', 'more explanation', 'more details', 'detailed', 'detail',
+      'elaborate', 'elaborate more', 'paki elaborate', 'mas detalyado',
+      'tell me more', 'give more info', 'dagdagan', 'dagdag',
+      'further explain', 'further explanation', 'full explanation',
+      'complete explanation', 'in depth', 'in-depth', 'thorough',
+      'comprehensive', 'expound', 'pakilinaw', 'linawin',
+      'more information', 'additional info', 'karagdagang',
+      'can you explain further', 'please elaborate'
+    ];
+    return detailedKeywords.some(keyword => lowerPrompt.includes(keyword));
+  },
+
+  shortenResponse(text) {
+    if (!text) return text;
+    const sentences = text.split(/(?<=[.!?])\s+/);
+    let concise = sentences.slice(0, 3).join(' ');
+    if (concise.length > 400) {
+      concise = concise.substring(0, 400) + '...';
+    }
+    concise = concise
+      .replace(/^(In summary|To summarize|In conclusion|Basically|Essentially|Simply put|In other words|That said|Having said that|With that said)\s*,?\s*/i, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return concise || text;
+  },
+
+  isContextualQuestion(prompt, previousPrompt) {
+    if (!previousPrompt) return false;
+    const contextualPatterns = [
+      'so yan', 'so ito', 'so iyan', 'so yun', 'so ganyan', 'so ganito', 'so ganun',
+      'yan na ba', 'yun na ba', 'ito na ba', 'ganyan na ba', 'ganun na ba',
+      'tama ba', 'tama', 'correct', 'right',
+      'so tungkol', 'so sa', 'so para sa',
+      'so ibig sabihin', 'so meaning', 'so parang',
+      'so sa madaling salita', 'so in short',
+      'paano naman', 'what about', 'how about',
+      'paano kung', 'what if',
+      'bakit', 'why', 'paano', 'how', 'kailan', 'when', 'saan', 'where', 'sino', 'who', 'alin', 'which',
+      'ano', 'what', 'ano ba', 'what about',
+      'gets', 'gets ko', 'nagets', 'naintindihan',
+      'so gets', 'so naintindihan',
+      'ayun', 'ayon', 'ganun pala', 'ganyan pala',
+      'so ayun', 'so ayon',
+      'ok', 'okay', 'sige', 'cge',
+      'so okay', 'so sige',
+      'ah ganun', 'ah ganyan', 'ah okay',
+      'so ah', 'so okay',
+      'talaga', 'really', 'sure',
+      'so talaga', 'so sure',
+      'so that', 'so this', 'so it',
+      'so about', 'so regarding',
+      'so basically', 'so essentially',
+      'so you mean', 'so you saying',
+      'mao na', 'mao ni', 'mao to', 'mao diay',
+      'mao ba', 'mao jud', 'mao gyud',
+      'so mao', 'so mao na',
+      'sakto ba', 'sakto',
+      'ingon ana', 'ingon ani',
+      'so ingon', 'so ingon ana',
+      'unsa man', 'unsa',
+      'na gets', 'nakasabot', 'nasabtan',
+      'so nakasabot', 'so nasabtan',
+      'aw', 'aw okay', 'ah okay',
+      'so', 'sow', 'eh', 'e', 'a', 'ah', 'oh', 'ay',
+      'ha', 'heh', 'hmm', 'hm', 'mmm'
+    ];
+    const isRelated = contextualPatterns.some(pattern => prompt.includes(pattern));
+    const prevWords = previousPrompt.split(' ').filter(w => w.length > 2);
+    const currentWords = prompt.split(' ').filter(w => w.length > 2);
+    const hasRelatedWords = prevWords.some(w => currentWords.some(cw => cw.includes(w) || w.includes(cw)));
+    return isRelated || hasRelatedWords;
+  },
+
+  isFollowUpRequest(prompt) {
+    const keywords = [
+      'translate', 'translate to', 'translate into', 'translate in',
+      'translation', 'isalin', 'salin', 'ipasalin', 'isalin sa',
+      'transl', 'trans', 'tl', 'bis', 'ceb', 'eng', 'spa',
+      'tagalog', 'bisaya', 'cebuano', 'spanish', 'filipino',
+      'english', 'ilocano', 'waray', 'hiligaynon', 'kapampangan',
+      'elaborate', 'elaborate further', 'explain more', 'paki elaborate',
+      'paki explain', 'paliwanag', 'ipaliwanag', 'elab', 'explain',
+      'detail', 'further', 'more details', 'mas detalyado',
+      'summarize', 'summary', 'i-summarize', 'brief', 'make it short',
+      'short', 'concise', 'shorten', 'sum', 'ikli', 'paikliin',
+      'simplify', 'simple', 'pasimplehin', 'basic', 'simplified',
+      'simp', 'madali', 'dali', 'gawing simple',
+      'example', 'sample', 'halimbawa', 'instance', 'eg', 'ex', 'hal',
+      'give example', 'give examples', 'magbigay ng halimbawa',
+      'correct', 'fix', 'tama', 'ayusin', 'improve', 'better',
+      'improved', 'i-correct', 'i-fix', 'iwasto',
+      'add', 'additional', 'dagdagan', 'more', 'add more',
+      'dagdag', 'karagdagang',
+      'humanize', 'make it human', 'conversational', 'natural',
+      'make it natural', 'parang tao', 'human-like', 'human',
+      'gawing natural', 'gawing tao',
+      'tama ba', 'correct ba', 'right ba', 'sure ba', 'talaga',
+      'really', 'are you sure', 'sigurado ka',
+      'clarify', 'clarification', 'linawin', 'clear', 'make clear',
+      'ulit', 'repeat', 'say again', 'paulit', 'ulitin',
+      'paki-ulit', 'pakiulit', 'again',
+      'gets', 'nagets', 'naintindihan', 'understand',
+      'naiintindihan', 'gets ko', 'nagets ko', 'gots', 'got it',
+      'oo', 'opo', 'sige', 'cge', 'okay', 'ok',
+      'agree', 'yes', 'yeah', 'yep',
+      'hindi', 'dili', 'no', 'not', 'mali',
+      'disagree', 'hindi tama', 'mali yan',
+      'what', 'why', 'how', 'when', 'where', 'who', 'which',
+      'ano', 'bakit', 'paano', 'kailan', 'saan', 'sino', 'alin',
+      'wut', 'y', 'hau', 'wen', 'wer', 'hu', 'wich',
+      'anu', 'bkt', 'pano', 'klan', 'san', 'sinu', 'aln',
+      'kasi', 'dahil', 'kaya', 'nga', 'na', 'pa', 'ba',
+      'din', 'rin', 'lang', 'lng', 'naman', 'nman', 'nmn',
+      'talaga', 'tlga', 'tlag', 'sabi mo', 'sbi mo'
+    ];
+    return keywords.some(keyword => prompt.includes(keyword));
+  },
+
+  isNewTopic(prompt, previousPrompt) {
+    if (!previousPrompt) return true;
+    const newTopicIndicators = [
+      'hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening',
+      'kamusta', 'musta', 'kumusta', 'musta na', 'kumusta ka',
+      'oy', 'oi', 'hoy', 'ei', 'ey',
+      'good day', 'greetings', 'sup', 'whats up', 'whassup',
+      'magandang umaga', 'magandang tanghali', 'magandang hapon', 'magandang gabi',
+      'maayong buntag', 'maayong udto', 'maayong hapon', 'maayong gabii',
+      'ask', 'tanong', 'question', 'tungkol sa',
+      'about', 'regarding', 'sa', 'about sa',
+      'i want to ask', 'gusto kong itanong',
+      'can i ask', 'pwede magtanong',
+      'new topic', 'bagong topic',
+      'change topic', 'change subject', 'ibang topic', 'iba naman',
+      'next topic', 'lipat tayo', 'move on',
+      'what is', 'what are', 'what does', 'what do',
+      'ano ang', 'ano ba', 'ano yung', 'ano iyong',
+      'sino ang', 'sino ba', 'sino yung', 'sino iyong',
+      'bakit', 'paano', 'kailan', 'saan',
+      'why', 'how', 'when', 'where', 'who', 'which',
+      'tell me about', 'tell me', 'tell about',
+      'explain', 'define', 'describe',
+      'give me', 'give', 'show me',
+      'can you tell', 'could you tell',
+      'please explain', 'please tell',
+      'do you know', 'did you know',
+      'have you heard', 'have you seen',
+      'is it true', 'is that true',
+      'really', 'seriously',
+      'today', 'now', 'currently',
+      'recently', 'lately',
+      'nowadays', 'these days',
+      'this time', 'this day'
+    ];
+    if (prompt.length < 10 && !this.isFollowUpRequest(prompt)) {
+      return true;
+    }
+    return newTopicIndicators.some(indicator => prompt.includes(indicator));
+  },
+
+  cleanOldHistory() {
+    const now = Date.now();
+    const maxAge = 30 * 60 * 1000;
+    for (const [userId, data] of Object.entries(conversationHistory)) {
+      if (now - data.timestamp > maxAge) {
+        delete conversationHistory[userId];
+      }
+    }
   },
 
   buildFinalPrompt(prompt, previousResponse, previousPrompt, isReply, wantsDetailed) {
@@ -602,13 +827,15 @@ module.exports = {
   async translateResponse(text, targetLanguage) {
     try {
       const translatePrompt = `Translate this text to ${targetLanguage}. Only provide the translation, no other text. Do not include the original text. Here is the text to translate: ${text}`;
-      const response = await this.callAPI(translatePrompt);
+      const response = await this.callAPI(translatePrompt, 'translation');
       return response || text;
     } catch (error) {
       console.error('[Translation] Failed:', error.message);
       return text;
     }
   },
+
+  // ==================== HELPER FUNCTIONS ====================
 
   async getRepliedMessageData(mid, token) {
     try {
@@ -618,13 +845,30 @@ module.exports = {
         fields: 'message,from,attachments'
       };
       const { data } = await axios.get(url, { params });
+      
+      let imageUrl = null;
+      if (data?.attachments?.data) {
+        for (const attachment of data.attachments.data) {
+          if (attachment.type === 'image' || attachment.type === 'photo') {
+            imageUrl = attachment?.image_data?.url || attachment?.url || null;
+            if (imageUrl) {
+              const urlObj = new URL(imageUrl);
+              urlObj.searchParams.set('access_token', token);
+              imageUrl = urlObj.toString();
+            }
+            break;
+          }
+        }
+      }
+      
       return {
         message: data?.message || null,
-        from: data?.from?.id || null
+        from: data?.from?.id || null,
+        imageUrl: imageUrl
       };
     } catch (error) {
       console.error('[Get Replied Message] Failed:', error.message);
-      return { message: null, from: null };
+      return { message: null, from: null, imageUrl: null };
     }
   },
 
@@ -632,15 +876,12 @@ module.exports = {
     try {
       const userInfo = await this.getUserInfo(senderId, token);
       let response = '';
-
       if (prompt.toLowerCase().includes('name') || prompt.toLowerCase().includes('pangalan')) {
         response = userInfo.name ? `Your name is ${userInfo.name}.` : 'I cannot tell you that because it is confidential.';
       }
-
       if (prompt.toLowerCase().includes('birthday') || prompt.toLowerCase().includes('kelan')) {
         response += userInfo.birthday ? `\nYour birthday is ${userInfo.birthday}.` : '\nI cannot tell you that because it is confidential.';
       }
-
       if (!response) {
         const publicInfo = [];
         if (userInfo.name) publicInfo.push(`Name: ${userInfo.name}`);
@@ -651,7 +892,6 @@ module.exports = {
           ? `Here is your public information:\n${publicInfo.join('\n')}`
           : 'I cannot tell you that because it is confidential.';
       }
-
       await sendMessage(senderId, { text: response }, token);
     } catch (error) {
       console.error('[User Info] Failed:', error.message);
