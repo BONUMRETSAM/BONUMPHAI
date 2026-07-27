@@ -74,8 +74,6 @@ module.exports = {
         const history = conversationHistory[senderId];
         if (history && history.lastResponse) {
           const lowerPrompt = prompt.toLowerCase();
-          
-          // Check if user wants to return to a specific topic
           const returnToTopic = this.isReturnToTopicRequest(prompt);
           if (returnToTopic) {
             const topic = this.extractTopicFromReturn(prompt);
@@ -96,7 +94,6 @@ module.exports = {
               previousPrompt = history.lastPrompt;
               isReply = true;
             } else {
-              // Save current topic to history before clearing
               if (history.lastPrompt && history.lastResponse) {
                 if (!history.topicHistory) history.topicHistory = {};
                 const topicKey = history.lastPrompt.substring(0, 50);
@@ -186,20 +183,16 @@ module.exports = {
     if (!previousPrompt) return true;
     
     const lowerPrompt = prompt.toLowerCase();
-    const lowerPrevious = previousPrompt.toLowerCase();
     
-    // Casual phrases - new topic
     const casualPhrases = ['hahaha', 'haha', 'hehe', 'lol', 'lmao', 'oh', 'ah', 'eh', 'ay', 'ha', 'hmm', 'hm', 'mmm', 'wow', 'shet', 'gagi', 'lala', 'hala', 'talaga', 'seryoso', 'grabe', 'sus', 'hay', 'ayoko', 'sige', 'cge', 'okay', 'ok', 'ge', 'bakit', 'why', 'paano', 'how', 'ano', 'what', 'saan', 'where', 'kailan', 'when', 'sino', 'who'];
     if (casualPhrases.some(p => lowerPrompt.includes(p)) && originalPrompt.length < 20) {
       return true;
     }
     
-    // Short messages - new topic
     if (originalPrompt.length < 10 && !this.isFollowUpRequest(prompt)) {
       return true;
     }
     
-    // Check if prompt contains words from previous topic
     const prevWords = previousPrompt.split(' ').filter(w => w.length > 3);
     const currentWords = prompt.split(' ').filter(w => w.length > 3);
     const hasRelatedWords = prevWords.some(w => 
@@ -210,7 +203,6 @@ module.exports = {
       return true;
     }
     
-    // New topic indicators
     const indicators = ['hello', 'hi', 'hey', 'kamusta', 'musta', 'tanong', 'question', 'new topic', 'bagong topic', 'iba naman', 'lipat tayo', 'move on', 'gusto ko malaman', 'i want to know', 'tell me about', 'ano ang', 'what is'];
     if (indicators.some(i => lowerPrompt.includes(i)) && !this.isFollowUpRequest(prompt)) {
       return true;
@@ -1026,52 +1018,69 @@ module.exports = {
   },
 
   buildGeminiPrompt(userPrompt) {
-    let prompt = `Analyze this image and provide a comprehensive response.
+    let prompt = `You are an advanced AI assistant analyzing an image. Your task is to DETECT the content type and respond accordingly with ACCURATE and PRECISE answers.
 
-DETECT THE CONTENT TYPE and respond accordingly:
+CONTENT TYPE DETECTION & RESPONSE:
 
-CONTENT TYPES:
-- Educational: Provide analysis, learning tips, study strategies, real-world examples
-- Career/Professional: Provide career advice, skills needed, industry insights, growth strategies
-- Math/Science: Solve problems step-by-step, explain concepts, provide practice examples
-- Business/Marketing: Provide business insights, marketing strategies, growth tips
-- Health/Medical: Provide health tips, wellness advice, medical information
-- Technology: Provide tech insights, trends, learning resources
-- Arts/Creative: Provide creative tips, techniques, inspiration
-- General: Provide analysis, observations, helpful suggestions
+1. ACTIVITY SHEET / WORKSHEET / QUIZ / HOMEWORK / ASSIGNMENT
+   - Identify the subject (Math, Science, English, TLE, etc.)
+   - Identify the type (Multiple Choice, Fill in the Blanks, Sequencing, True/False, Essay, Problem Solving)
+   - Read and understand each question carefully
+   - Provide ACCURATE answers based on the content
+   - For sequencing: Arrange in correct order
+   - For true/false: Mark ✓ or ✗ with brief explanation
+   - For explain why: Provide clear 1-2 sentences
+   - For math: Show step-by-step solution
+   - Format: [Question] → [Answer]
 
-For EVERY response, include this structure:
+2. MATH PROBLEMS / EQUATIONS
+   - Read the problem carefully
+   - Show step-by-step solution
+   - Provide final answer with proper units
+   - Include formula used
 
-1. ANALYSIS - Detailed analysis of what you see
-2. THEREFORE / CORE POINT - The main conclusion, key insight, or final answer
-3. TIPS WITH EXAMPLES - Practical suggestions with specific examples
-4. NEXT STEPS - Actionable steps to take
+3. SCIENCE / DIAGRAMS / LABELS
+   - Identify parts and their functions
+   - Explain processes
+   - Provide definitions and key concepts
 
-IMPORTANT RULES:
-- State the main takeaway clearly in THEREFORE
-- For problems: State the final answer
-- For analysis: State the core insight
-- For questions: State the direct answer
-- Use plain text only. No symbols, no markdown.
+4. TEXTBOOK / NOTES / EDUCATIONAL CONTENT
+   - Extract key concepts
+   - Summarize main ideas
+   - Provide examples and applications
+
+5. GENERAL IMAGE (Photo, Art, Screenshot)
+   - Analyze what you see
+   - Extract text if present
+   - Provide observations and insights
 
 RESPONSE FORMAT:
-ANALYSIS:
-[Detailed analysis of the image]
 
-THEREFORE:
-[The main conclusion, core point, final answer, or key insight]
+CONTENT TYPE: [Activity Sheet / Math / Science / Educational / General]
 
-TIPS WITH EXAMPLES:
-1. [Tip] - Example: [Specific example]
-2. [Tip] - Example: [Specific example]
+MAIN ANALYSIS:
+[Detailed analysis of what you see]
 
-NEXT STEPS:
-1. [Actionable step]
-2. [Actionable step]`;
+ANSWERS / SOLUTIONS:
+[For activity sheets: Provide all answers clearly]
+[For math: Show step-by-step solution]
+[For science: Explain parts and functions]
+[For general: Provide insights]
 
-    if (userPrompt && !userPrompt.includes('Analyze this image')) {
-      prompt += `\n\nUSER QUESTION: ${userPrompt}`;
-    }
+ADDITIONAL TIPS / EXPLANATIONS:
+[Practical tips, examples, or further explanations]
+
+IMPORTANT RULES:
+- READ the content carefully
+- ANSWER ACCURATELY based on what you see
+- For math, SHOW SOLUTION step-by-step
+- For activity sheets, answer ALL questions
+- Be precise and clear
+- Use plain text only
+- DO NOT guess if unsure, say "Cannot determine from image"
+
+USER QUESTION: ${userPrompt || 'Analyze this image and provide a comprehensive response.'}`;
+
     return prompt;
   },
 
@@ -1309,7 +1318,6 @@ NEXT STEPS:
     if (!previousPrompt) return true;
     
     const lowerPrompt = prompt.toLowerCase();
-    const lowerPrevious = previousPrompt.toLowerCase();
     
     const casualPhrases = ['hahaha', 'haha', 'hehe', 'lol', 'lmao', 'oh', 'ah', 'eh', 'ay', 'ha', 'hmm', 'hm', 'mmm', 'wow', 'shet', 'gagi', 'lala', 'hala', 'talaga', 'seryoso', 'grabe', 'sus', 'hay', 'ayoko', 'sige', 'cge', 'okay', 'ok', 'ge', 'bakit', 'why', 'paano', 'how', 'ano', 'what', 'saan', 'where', 'kailan', 'when', 'sino', 'who'];
     if (casualPhrases.some(p => lowerPrompt.includes(p)) && originalPrompt.length < 20) {
