@@ -1018,9 +1018,9 @@ module.exports = {
   },
 
   buildGeminiPrompt(userPrompt) {
-    let prompt = `You are an advanced AI assistant analyzing an image. Your task is to DETECT the content type and respond accordingly with ACCURATE and PRECISE answers.
+    let prompt = `You are an advanced AI assistant analyzing an image. Your task is to DETECT the content type and respond accordingly with the APPROPRIATE format.
 
-CONTENT TYPE DETECTION & RESPONSE:
+CONTENT TYPE DETECTION & RESPONSE FORMATS:
 
 1. ACTIVITY SHEET / WORKSHEET / QUIZ / HOMEWORK / ASSIGNMENT
    - Identify the subject (Math, Science, English, TLE, etc.)
@@ -1031,53 +1031,58 @@ CONTENT TYPE DETECTION & RESPONSE:
    - For true/false: Mark ✓ or ✗ with brief explanation
    - For explain why: Provide clear 1-2 sentences
    - For math: Show step-by-step solution
-   - Format: [Question] → [Answer]
+   - FORMAT: Use structured format with "CONTENT TYPE:", "ANSWERS:", "EXPLANATIONS:"
 
 2. MATH PROBLEMS / EQUATIONS
    - Read the problem carefully
    - Show step-by-step solution
    - Provide final answer with proper units
-   - Include formula used
+   - FORMAT: Use "CONTENT TYPE:", "SOLUTION:", "FINAL ANSWER:"
 
 3. SCIENCE / DIAGRAMS / LABELS
    - Identify parts and their functions
    - Explain processes
    - Provide definitions and key concepts
+   - FORMAT: Use "CONTENT TYPE:", "PARTS/FUNCTIONS:", "KEY CONCEPTS:"
 
 4. TEXTBOOK / NOTES / EDUCATIONAL CONTENT
    - Extract key concepts
    - Summarize main ideas
    - Provide examples and applications
+   - FORMAT: Use "CONTENT TYPE:", "KEY CONCEPTS:", "SUMMARY:"
 
-5. GENERAL IMAGE (Photo, Art, Screenshot)
-   - Analyze what you see
+5. MEME / HUMOROUS IMAGE
+   - Identify the meme or subject
+   - Extract any text present
+   - Explain the joke or context briefly (1-2 sentences)
+   - Keep it SHORT and DIRECT
+   - FORMAT: "CONTENT TYPE: Meme" then brief description
+
+6. GENERAL IMAGE (Photo, Art, Screenshot)
+   - Identify what is shown (person, place, object, event)
+   - Briefly describe what you see (2-3 sentences)
    - Extract text if present
-   - Provide observations and insights
+   - Keep it SIMPLE and DIRECT
+   - FORMAT: "CONTENT TYPE: General" then brief description
 
-RESPONSE FORMAT:
+7. SCREENSHOT / UI / WEBSITE
+   - Identify what is shown (app, website, game)
+   - Extract text if present
+   - Brief description of what is happening
+   - FORMAT: "CONTENT TYPE: Screenshot" then brief description
 
-CONTENT TYPE: [Activity Sheet / Math / Science / Educational / General]
-
-MAIN ANALYSIS:
-[Detailed analysis of what you see]
-
-ANSWERS / SOLUTIONS:
-[For activity sheets: Provide all answers clearly]
-[For math: Show step-by-step solution]
-[For science: Explain parts and functions]
-[For general: Provide insights]
-
-ADDITIONAL TIPS / EXPLANATIONS:
-[Practical tips, examples, or further explanations]
+8. PERSON / PORTRAIT
+   - Identify the person if known
+   - Brief description
+   - FORMAT: "CONTENT TYPE: Portrait" then brief description
 
 IMPORTANT RULES:
-- READ the content carefully
-- ANSWER ACCURATELY based on what you see
-- For math, SHOW SOLUTION step-by-step
-- For activity sheets, answer ALL questions
-- Be precise and clear
-- Use plain text only
-- DO NOT guess if unsure, say "Cannot determine from image"
+- DETECT the content type FIRST before responding
+- Use the APPROPRIATE format based on content type
+- For MEME and GENERAL images: KEEP IT SHORT and DIRECT
+- For ACTIVITY SHEETS and MATH: Provide detailed answers
+- DO NOT use the same format for all images
+- Use plain text only. No symbols, no markdown.
 
 USER QUESTION: ${userPrompt || 'Analyze this image and provide a comprehensive response.'}`;
 
