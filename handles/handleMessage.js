@@ -4,8 +4,7 @@ const { sendMessage } = require('./sendMessage');
 
 const commands = new Map();
 const imageCache = new Map();
-const prefix = '-';
-const CACHE_TTL = 10 * 60 * 1000; 
+const CACHE_TTL = 10 * 60 * 1000;
 
 const loadCommands = () => {
   const commandsDir = path.join(__dirname, '../commands');
@@ -33,6 +32,34 @@ setInterval(() => {
     }
   }
 }, CACHE_TTL);
+
+const isMathQuery = (text) => {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  
+  const mathKeywords = [
+    'solve', 'equation', 'derivative', 'integral', 'limit', 'area', 'volume',
+    'sin', 'cos', 'tan', 'mean', 'median', 'mode', 'probability', 'matrix',
+    'algebra', 'calculus', 'geometry', 'trigonometry', 'statistics',
+    'add', 'subtract', 'multiply', 'divide', 'fraction', 'decimal', 'percent',
+    'square', 'cube', 'root', 'power', 'exponent', 'factor', 'polynomial',
+    'triangle', 'circle', 'rectangle', 'perimeter', 'circumference',
+    'pythagorean', 'hypotenuse', 'angle', 'degree', 'radian',
+    'samples', 'examples', 'sample', 'example'
+  ];
+  
+  if (mathKeywords.some(k => lower.includes(k))) return true;
+  
+  const patterns = [
+    /[\d\+\-\*\/\^\(\)\=]/,
+    /\d+\s*[+\-*/]\s*\d+/,
+    /x\s*[+\-*/=]/,
+    /y\s*[+\-*/=]/,
+    /[=]\s*[\d]+/
+  ];
+  
+  return patterns.some(p => p.test(text));
+};
 
 const handleMessage = async (event, pageAccessToken) => {
   const senderId = event?.sender?.id;
@@ -68,16 +95,12 @@ const handleMessage = async (event, pageAccessToken) => {
   }
 
   if (hasImage && imageUrl && messageText) {
-    const isCommand = messageText.startsWith(prefix);
-    const [commandName] = isCommand 
-      ? messageText.slice(prefix.length).split(' ')
-      : messageText.split(' ');
-    
-    const normalizedCommand = commandName.toLowerCase();
-    const command = commands.get(normalizedCommand);
+    const words = messageText.split(' ');
+    const firstWord = words[0].toLowerCase();
+    const command = commands.get(firstWord);
     
     if (command) {
-      const args = messageText.split(' ').slice(1);
+      const args = words.slice(1);
       await command.execute(senderId, args, pageAccessToken, event);
       return;
     }
@@ -92,21 +115,35 @@ const handleMessage = async (event, pageAccessToken) => {
 
   if (!messageText) return;
   
-  const isCommand = messageText.startsWith(prefix);
-  const [commandName, ...args] = isCommand 
-    ? messageText.slice(prefix.length).split(' ')
-    : messageText.split(' ');
-  
-  const normalizedCommand = commandName.toLowerCase();
+  const words = messageText.split(' ');
+  const firstWord = words[0].toLowerCase();
+  const args = words.slice(1);
   
   try {
-    const command = commands.get(normalizedCommand);
+    const command = commands.get(firstWord);
     
     if (command) {
       await command.execute(senderId, args, pageAccessToken, event);
-    } else if (commands.has('ai')) {
-      await commands.get('ai').execute(senderId, [messageText], pageAccessToken, event);
+      return;
     }
+    
+    if (isMathQuery(messageText)) {
+      const mathCommand = commands.get('math');
+      if (mathCommand) {
+        await mathCommand.execute(senderId, [messageText], pageAccessToken, event);
+        return;
+      }
+    }
+    
+    if (commands.has('ai')) {
+      await commands.get('ai').execute(senderId, [messageText], pageAccessToken, event);
+      return;
+    }
+    
+    await sendMessage(senderId, {
+      text: 'Unknown command. Available commands: ' + Array.from(commands.keys()).join(', ')
+    }, pageAccessToken);
+    
   } catch (error) {
     console.error('Command execution error:', error.message);
     await sendMessage(senderId, { text: 'Command execution failed.' }, pageAccessToken);
