@@ -1,13 +1,14 @@
 {
   "name": "nodejs",
   "version": "1.0.0",
-  "description": "",
+  "description": "Facebook Messenger Bot with AI, Math, Image Analysis, Music, and more",
   "main": "index.js",
   "scripts": {
+    "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": ["facebook", "messenger", "bot", "ai", "math"],
+  "author": "GeoDevz69",
   "license": "ISC",
   "dependencies": {
     "mathjs": "^12.4.0",
