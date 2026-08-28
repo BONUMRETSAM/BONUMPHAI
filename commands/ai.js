@@ -145,7 +145,7 @@ module.exports = {
       // ===== WELCOME MESSAGE =====
       if (!prompt && !isReply && !imageUrl) {
         await sendMessage(senderId, {
-          text: 'Hello! I am Teacher Arlene a Multi-Modal AI.\n\nMga Kakayahang kaya ko:\n\n✓ Can answer text conversations\n✓ Can analyze image and all activity sheets\n✓ Can give research articles, studies, and thesis\n✓ Can generate images\n✓ Can search music\n✓ Can search lyrics\n✓ Can give and solve the problem with full solutions\n✓ Can Summarize\n✓ Can make resume\n✓ Can make all type of letters\n✓ Can translate all languages\n✓ Can enhance image resolution\n✓ Can remove image background\n✓ Can test API endpoint\n✓ Can make images to Url\n✓ Can make powerpoint presentation report slides\n✓ Can extract text from images\n✓ Can understand and response all languages\n\nIf you want to know how to use my commands and functions type help.'
+          text: 'Hello! I am Teacher Arlene a Multi-Modal AI.\n\nMga Kakayahang kaya ko:\n\n✓ Can answer text conversations\n✓ Can analyze image and all activity sheets\n✓ Can give research articles, studies, and thesis\n✓ Can generate images\n✓ Can search music\n✓ Can search lyrics\n✓ Can give and solve the problem with full solutions\n✓ Can Summarize\n✓ Can make resume\n✓ Can make all type of letters\n✓ Can translate all languages\n✓ Can enhance image resolution\n✓ Can remove image background\n✓ Can test API endpoint\n✓ Can make images to Url\n✓ Can make powerpoint presentation report slides\n✓ Can understand and response all languages\n\nIf you want to know how to use my commands and functions type help.'
         }, token);
         return;
       }
