@@ -472,5 +472,6 @@ module.exports = {
   for (const job of jobs) {
     if (job.keywords.some(k => prompt.includes(k))) return job.key;
   }
-  return null;
-}
+      return null;
+  }
+};
