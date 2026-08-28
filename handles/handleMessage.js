@@ -67,6 +67,7 @@ const handleMessage = async (event, pageAccessToken) => {
   
   const messageText = event?.message?.text?.trim();
   const attachments = event?.message?.attachments || [];
+  const replyTo = event?.message?.reply_to?.mid;
   
   let imageUrl = null;
   let hasImage = false;
@@ -85,6 +86,22 @@ const handleMessage = async (event, pageAccessToken) => {
     }
   }
 
+  // ===== REPLY WITH EXTRACT COMMAND =====
+  if (replyTo && messageText && !hasImage) {
+    const lowerText = messageText.toLowerCase();
+    const isExtractCommand = ['extract', 'extract text', 'kunin ang text', 'kuha text', 'basahin ang image', 'read image'].some(cmd => lowerText.startsWith(cmd));
+    
+    if (isExtractCommand) {
+      console.log('[handleMessage] Extract command with reply detected...');
+      const extractCommand = commands.get('extract');
+      if (extractCommand) {
+        await extractCommand.execute(senderId, [], pageAccessToken, event);
+        return;
+      }
+    }
+  }
+
+  // ===== IMAGE AUTO-ANALYZE (Gemini) =====
   if (hasImage && imageUrl && !messageText) {
     console.log('[handleMessage] Auto-analyzing image with gemini...');
     const geminiCommand = commands.get('gemini');
@@ -94,6 +111,7 @@ const handleMessage = async (event, pageAccessToken) => {
     }
   }
 
+  // ===== IMAGE WITH CAPTION =====
   if (hasImage && imageUrl && messageText) {
     const words = messageText.split(' ');
     const firstWord = words[0].toLowerCase();
@@ -103,6 +121,19 @@ const handleMessage = async (event, pageAccessToken) => {
       const args = words.slice(1);
       await command.execute(senderId, args, pageAccessToken, event);
       return;
+    }
+    
+    // Check kung extract command
+    const lowerText = messageText.toLowerCase();
+    const isExtractCommand = ['extract', 'extract text', 'kunin ang text', 'kuha text', 'basahin ang image', 'read image'].some(cmd => lowerText.startsWith(cmd));
+    
+    if (isExtractCommand) {
+      console.log('[handleMessage] Extract command with image caption...');
+      const extractCommand = commands.get('extract');
+      if (extractCommand) {
+        await extractCommand.execute(senderId, [], pageAccessToken, event);
+        return;
+      }
     }
     
     console.log('[handleMessage] Auto-analyzing image with caption...');
