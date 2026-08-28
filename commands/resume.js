@@ -70,7 +70,7 @@ module.exports = {
   },
 
   getResume(jobType) {
-    const L = '───────────────────────────────────────────────────────────────';
+    const L = '──────────────────────────────────────';
     const header = 'JUAN DELA CRUZ (example lang — palitan mo ng actual name)\nEmail: juandelacruz@gmail.com | Contact No.: 09123456789 | Address: Muntinlupa City, Philippines\n\n';
     
     const templates = {};
