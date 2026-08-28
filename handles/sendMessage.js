@@ -4,6 +4,7 @@ const FormData = require('form-data');
 
 const API_URL = 'https://graph.facebook.com/v23.0/me/messages';
 const UPLOAD_URL = 'https://graph.facebook.com/v23.0/me/message_attachments';
+const MAX_TEXT_LENGTH = 1900; // Safe below 2000 limit
 
 const apiRequest = async (url, options, pageAccessToken) => {
   const response = await fetch(`${url}?access_token=${pageAccessToken}`, options);
@@ -49,6 +50,54 @@ const uploadAttachment = async (filePath, type, pageAccessToken) => {
   return result.attachment_id;
 };
 
+// Split text into chunks
+const splitText = (text) => {
+  const chunks = [];
+  
+  // Kung maikli lang, return as is
+  if (text.length <= MAX_TEXT_LENGTH) {
+    return [text];
+  }
+  
+  // Hatiin sa paragraphs muna
+  const paragraphs = text.split('\n');
+  let currentChunk = '';
+  
+  for (const paragraph of paragraphs) {
+    // Kung ang paragraph mismo ay mahigit sa MAX_TEXT_LENGTH
+    if (paragraph.length > MAX_TEXT_LENGTH) {
+      // I-save ang current chunk
+      if (currentChunk) {
+        chunks.push(currentChunk.trim());
+        currentChunk = '';
+      }
+      
+      // Hatiin ang mahabang paragraph
+      for (let i = 0; i < paragraph.length; i += MAX_TEXT_LENGTH) {
+        chunks.push(paragraph.slice(i, i + MAX_TEXT_LENGTH));
+      }
+    }
+    // Kung kasya pa sa current chunk
+    else if ((currentChunk + '\n' + paragraph).length <= MAX_TEXT_LENGTH) {
+      currentChunk += (currentChunk ? '\n' : '') + paragraph;
+    }
+    // Kung hindi na kasya, i-save ang current at magsimula ng bago
+    else {
+      if (currentChunk) {
+        chunks.push(currentChunk.trim());
+      }
+      currentChunk = paragraph;
+    }
+  }
+  
+  // I-save ang huling chunk
+  if (currentChunk) {
+    chunks.push(currentChunk.trim());
+  }
+  
+  return chunks;
+};
+
 const sendMessage = async (senderId, message, pageAccessToken) => {
   const { text = '', attachment = null, quick_replies = [], buttons = [] } = message;
   
@@ -57,37 +106,7 @@ const sendMessage = async (senderId, message, pageAccessToken) => {
   try {
     await setTyping(senderId, 'typing_on', pageAccessToken);
     
-    let messagePayload = { recipient: { id: senderId }, message: {} };
-    
-    // Button template
-    if (buttons.length) {
-      messagePayload.message.attachment = {
-        type: 'template',
-        payload: {
-          template_type: 'button',
-          text: text || 'Choose an option:',
-          buttons: buttons.map(btn => ({
-            type: 'postback',
-            title: btn.title,
-            payload: btn.payload
-          }))
-        }
-      };
-    }
-    // Text with quick replies
-    else if (text) {
-      messagePayload.message.text = text;
-      
-      if (quick_replies.length) {
-        messagePayload.message.quick_replies = quick_replies.map(qr => ({
-          content_type: 'text',
-          title: qr.title,
-          payload: qr.payload
-        }));
-      }
-    }
-    
-    // Handle attachments
+    // Kung may attachment, ipadala ng direkta (hindi kailangan i-split)
     if (attachment) {
       // Direct file upload
       if (attachment.filePath) {
@@ -113,6 +132,8 @@ const sendMessage = async (senderId, message, pageAccessToken) => {
       }
       
       // Template or URL attachment
+      let messagePayload = { recipient: { id: senderId }, message: {} };
+      
       if (attachment.type === 'template') {
         messagePayload.message.attachment = {
           type: 'template',
@@ -124,13 +145,77 @@ const sendMessage = async (senderId, message, pageAccessToken) => {
           payload: attachment.payload || {}
         };
       }
+      
+      if (text) {
+        messagePayload.message.text = text;
+      }
+      
+      await apiRequest(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(messagePayload)
+      }, pageAccessToken);
+      
+      await setTyping(senderId, 'typing_off', pageAccessToken);
+      return;
     }
     
-    await apiRequest(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(messagePayload)
-    }, pageAccessToken);
+    // Button template
+    if (buttons.length) {
+      const messagePayload = {
+        recipient: { id: senderId },
+        message: {
+          attachment: {
+            type: 'template',
+            payload: {
+              template_type: 'button',
+              text: text || 'Choose an option:',
+              buttons: buttons.map(btn => ({
+                type: 'postback',
+                title: btn.title,
+                payload: btn.payload
+              }))
+            }
+          }
+        }
+      };
+      
+      await apiRequest(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(messagePayload)
+      }, pageAccessToken);
+      
+      await setTyping(senderId, 'typing_off', pageAccessToken);
+      return;
+    }
+    
+    // Text message - I-split kung mahaba
+    if (text) {
+      const chunks = splitText(text);
+      
+      for (const chunk of chunks) {
+        const messagePayload = {
+          recipient: { id: senderId },
+          message: { text: chunk }
+        };
+        
+        // Quick replies ay ilalagay lang sa huling chunk
+        if (quick_replies.length && chunk === chunks[chunks.length - 1]) {
+          messagePayload.message.quick_replies = quick_replies.map(qr => ({
+            content_type: 'text',
+            title: qr.title,
+            payload: qr.payload
+          }));
+        }
+        
+        await apiRequest(API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(messagePayload)
+        }, pageAccessToken);
+      }
+    }
     
     await setTyping(senderId, 'typing_off', pageAccessToken);
     
