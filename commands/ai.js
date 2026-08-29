@@ -25,7 +25,7 @@ module.exports = {
       // ========== WELCOME MESSAGE ==========
       if (!prompt && !event?.message?.reply_to?.mid && !event?.message?.attachments) {
         await sendMessage(senderId, {
-          text: '🤖 AI ASSISTANT - 100% ACCURATE ANSWERS\n\nI can answer ALL types of tests and questions:\n• 📝 Activity Sheets & Worksheets\n• 📝 Quizzes and Exams\n• 📝 Assignments & Homework\n• 📝 Shading Exams (Scantron/Bubble)\n• 📝 ✓ / ✗ (Check / X) Questions\n• 📝 😊 Emoji Ratings\n• 📝 Multiple Choice (A, B, C, D)\n• 📝 True or False\n• 📝 Fill in the Blank\n• 📝 Matching Type\n• 📝 Enumeration\n• 📝 Essay Questions\n• 📝 Math Problems (with step-by-step solution)\n• 📝 Summative/Pre-Assessment/Post-Assessment\n• ❓ Any Questions\n• 🖼️ Image Analysis\n\nHow to use:\n• ai [your test/question/assignment]\n• Or send/reply to an image'
+          text: 'Hello! I am Teacher Arlene a Multi-Modal AI.\n\nMga Kakayahang kaya ko:\n\n✓ Can answer text conversations\n✓ Can analyze image and all activity sheets\n✓ Can give research articles, studies, and thesis\n✓ Can generate images\n✓ Can search music\n✓ Can search lyrics\n✓ Can give and solve the problem with full solutions\n✓ Can Summarize\n✓ Can make resume\n✓ Can make all type of letters\n✓ Can translate all languages\n✓ Can enhance image resolution\n✓ Can remove image background\n✓ Can test API endpoint\n✓ Can make images to Url\n✓ Can make powerpoint presentation report slides\n✓ Can extract text from images\n✓ Can understand and response all languages\n\nIf you want to know how to use my commands and functions type help.'
         }, token);
         return;
       }
