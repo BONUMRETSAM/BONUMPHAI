@@ -43,7 +43,7 @@ module.exports = {
       // ========== IF PRESENTATION TOPIC -> REDIRECT TO PPT.JS ==========
       if (inputType === 'presentation') {
         await sendMessage(senderId, {
-          text: `This appears to be a presentation outline/topic.\n\nPlease use the "ppt" command to generate a comprehensive presentation:\n\nppt ${prompt.substring(0, 200)}${prompt.length > 200 ? '...' : ''}`
+          text: `This appears to be a presentation outline/topic.\n\nPlease use the "ppt" command to create PowerPoint presentation:\n\nppt ${prompt.substring(0, 200)}${prompt.length > 200 ? '...' : ''}`
         }, token);
         return;
       }
