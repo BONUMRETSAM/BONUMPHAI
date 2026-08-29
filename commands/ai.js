@@ -43,7 +43,7 @@ module.exports = {
       // ========== IF PRESENTATION TOPIC -> REDIRECT TO PPT.JS ==========
       if (inputType === 'presentation') {
         await sendMessage(senderId, {
-          text: `📊 This appears to be a presentation outline/topic.\n\nPlease use the "ppt" command to generate a comprehensive presentation:\n\nppt ${prompt.substring(0, 200)}${prompt.length > 200 ? '...' : ''}`
+          text: `This appears to be a presentation outline/topic.\n\nPlease use the "ppt" command to generate a comprehensive presentation:\n\nppt ${prompt.substring(0, 200)}${prompt.length > 200 ? '...' : ''}`
         }, token);
         return;
       }
@@ -56,7 +56,7 @@ module.exports = {
           inputType === 'true_false') {
         
         await sendMessage(senderId, { 
-          text: `📝 Analyzing for 100% accurate answers... Please wait.` 
+          text: `Analyzing... Please wait.` 
         }, token);
         
         const response = await this.handleActivitySheet(prompt);
@@ -67,14 +67,14 @@ module.exports = {
       // ========== HANDLE QUESTION ==========
       if (inputType === 'question') {
         await sendMessage(senderId, { 
-          text: '💭 Searching for accurate answer...' 
+          text: 'Searching... Please wait.' 
         }, token);
       }
 
       // ========== HANDLE MATH ==========
       if (inputType === 'math') {
         await sendMessage(senderId, { 
-          text: '🧮 Solving with step-by-step solution...' 
+          text: 'Solving... Please wait.' 
         }, token);
         
         const finalPrompt = this.buildMathSolutionPrompt(prompt, this.detectLanguage(prompt));
@@ -191,7 +191,7 @@ module.exports = {
 
       // ========== IMAGE ANALYSIS ==========
       if (imageUrl) {
-        await sendMessage(senderId, { text: '🖼️ Analyzing image with 100% accuracy...' }, token);
+        await sendMessage(senderId, { text: 'Analyzing... Please wait.' }, token);
         const aiResponse = await this.callGeminiAPI(prompt, imageUrl, this.detectLanguage(prompt));
         
         const history = conversationHistory[senderId] || { topicHistory: {} };
