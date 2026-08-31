@@ -61,12 +61,21 @@ const isMathQuery = (text) => {
   return patterns.some(p => p.test(text));
 };
 
+// ========== NEW: CHECK IF SCAN COMMAND ==========
+const isScanCommand = (text) => {
+  if (!text) return false;
+  const lower = text.toLowerCase().trim();
+  const scanKeywords = ['scan', 'identify', 'detect', 'whatisthis', 'scanimage', 'scan this', 'scan this image'];
+  return scanKeywords.some(k => lower === k || lower.startsWith(k + ' '));
+};
+
 const handleMessage = async (event, pageAccessToken) => {
   const senderId = event?.sender?.id;
   if (!senderId) return;
   
   const messageText = event?.message?.text?.trim();
   const attachments = event?.message?.attachments || [];
+  const isReply = !!event?.message?.reply_to?.mid;
   
   let imageUrl = null;
   let hasImage = false;
@@ -85,6 +94,56 @@ const handleMessage = async (event, pageAccessToken) => {
     }
   }
 
+  // ============================================
+  // SCENARIO 1: REPLY TO IMAGE WITH SCAN COMMAND (NEW)
+  // ============================================
+  if (isReply && messageText && isScanCommand(messageText)) {
+    console.log('[handleMessage] Scan command detected on reply');
+    const scanCommand = commands.get('scan');
+    if (scanCommand) {
+      const words = messageText.split(' ');
+      const args = words.slice(1);
+      await scanCommand.execute(senderId, args, pageAccessToken, event);
+      return;
+    }
+  }
+
+  // ============================================
+  // SCENARIO 2: HAS IMAGE WITH TEXT
+  // ============================================
+  if (hasImage && imageUrl && messageText) {
+    const words = messageText.split(' ');
+    const firstWord = words[0].toLowerCase();
+    const command = commands.get(firstWord);
+    
+    // If it's a specific command, execute it
+    if (command) {
+      const args = words.slice(1);
+      await command.execute(senderId, args, pageAccessToken, event);
+      return;
+    }
+    
+    // ========== NEW: Check if the whole text is a scan command ==========
+    if (isScanCommand(messageText)) {
+      const scanCommand = commands.get('scan');
+      if (scanCommand) {
+        await scanCommand.execute(senderId, [], pageAccessToken, event);
+        return;
+      }
+    }
+    
+    // ========== AUTO-IMAGE ANALYSIS (ai.js) - RETAINED ==========
+    console.log('[handleMessage] Auto-analyzing image with caption...');
+    const geminiCommand = commands.get('gemini');
+    if (geminiCommand) {
+      await geminiCommand.execute(senderId, [], pageAccessToken, event);
+      return;
+    }
+  }
+
+  // ============================================
+  // SCENARIO 3: HAS IMAGE BUT NO TEXT (AUTO) - RETAINED
+  // ============================================
   if (hasImage && imageUrl && !messageText) {
     console.log('[handleMessage] Auto-analyzing image with gemini...');
     const geminiCommand = commands.get('gemini');
@@ -94,25 +153,9 @@ const handleMessage = async (event, pageAccessToken) => {
     }
   }
 
-  if (hasImage && imageUrl && messageText) {
-    const words = messageText.split(' ');
-    const firstWord = words[0].toLowerCase();
-    const command = commands.get(firstWord);
-    
-    if (command) {
-      const args = words.slice(1);
-      await command.execute(senderId, args, pageAccessToken, event);
-      return;
-    }
-    
-    console.log('[handleMessage] Auto-analyzing image with caption...');
-    const geminiCommand = commands.get('gemini');
-    if (geminiCommand) {
-      await geminiCommand.execute(senderId, [], pageAccessToken, event);
-      return;
-    }
-  }
-
+  // ============================================
+  // SCENARIO 4: NO IMAGE, TEXT ONLY
+  // ============================================
   if (!messageText) return;
   
   const words = messageText.split(' ');
