@@ -61,12 +61,52 @@ const isMathQuery = (text) => {
   return patterns.some(p => p.test(text));
 };
 
-// ========== NEW: CHECK IF SCAN COMMAND ==========
+// ========== CHECK IF SCAN COMMAND ==========
 const isScanCommand = (text) => {
   if (!text) return false;
   const lower = text.toLowerCase().trim();
   const scanKeywords = ['scan', 'identify', 'detect', 'whatisthis', 'scanimage', 'scan this', 'scan this image'];
   return scanKeywords.some(k => lower === k || lower.startsWith(k + ' '));
+};
+
+// ========== GET IMAGE URL FROM REPLY ==========
+const getImageUrlFromReply = async (replyToMid, pageAccessToken) => {
+  try {
+    const url = `https://graph.facebook.com/v21.0/${replyToMid}`;
+    const params = {
+      access_token: pageAccessToken,
+      fields: 'message,from,attachments{image_data,url,type},created_time'
+    };
+    
+    console.log('[getImageUrlFromReply] Fetching message:', replyToMid);
+    
+    const response = await axios.get(url, { params });
+    const data = response.data;
+    
+    console.log('[getImageUrlFromReply] Response received');
+    
+    let imageUrl = null;
+    
+    if (data?.attachments?.data) {
+      for (const attachment of data.attachments.data) {
+        if (attachment.type === 'image' || attachment.type === 'photo') {
+          imageUrl = attachment?.image_data?.url || 
+                    attachment?.payload?.url || 
+                    attachment?.url || 
+                    null;
+          if (imageUrl) {
+            console.log('[getImageUrlFromReply] Found image URL');
+            break;
+          }
+        }
+      }
+    }
+    
+    return imageUrl;
+  } catch (error) {
+    console.error('[getImageUrlFromReply] Error:', error.message);
+    return null;
+  }
 };
 
 const handleMessage = async (event, pageAccessToken) => {
@@ -76,6 +116,7 @@ const handleMessage = async (event, pageAccessToken) => {
   const messageText = event?.message?.text?.trim();
   const attachments = event?.message?.attachments || [];
   const isReply = !!event?.message?.reply_to?.mid;
+  const replyToMid = event?.message?.reply_to?.mid;
   
   let imageUrl = null;
   let hasImage = false;
@@ -95,16 +136,76 @@ const handleMessage = async (event, pageAccessToken) => {
   }
 
   // ============================================
-  // SCENARIO 1: REPLY TO IMAGE WITH SCAN COMMAND (NEW)
+  // SCENARIO 1: REPLY TO IMAGE WITH SCAN COMMAND (FIXED)
   // ============================================
   if (isReply && messageText && isScanCommand(messageText)) {
     console.log('[handleMessage] Scan command detected on reply');
-    const scanCommand = commands.get('scan');
-    if (scanCommand) {
-      const words = messageText.split(' ');
-      const args = words.slice(1);
-      await scanCommand.execute(senderId, args, pageAccessToken, event);
-      return;
+    
+    // ========== FIX: Get image URL from the replied message ==========
+    let replyImageUrl = null;
+    if (replyToMid) {
+      replyImageUrl = await getImageUrlFromReply(replyToMid, pageAccessToken);
+    }
+    
+    // If we got an image from the reply, attach it to the event
+    if (replyImageUrl) {
+      // Create a modified event with the image URL
+      const modifiedEvent = {
+        ...event,
+        message: {
+          ...event.message,
+          attachments: [
+            {
+              type: 'image',
+              payload: { url: replyImageUrl }
+            }
+          ]
+        },
+        _scanImageUrl: replyImageUrl // Also add as custom property
+      };
+      
+      const scanCommand = commands.get('scan');
+      if (scanCommand) {
+        const words = messageText.split(' ');
+        const args = words.slice(1);
+        await scanCommand.execute(senderId, args, pageAccessToken, modifiedEvent);
+        return;
+      }
+    } else {
+      // If no image found in reply, check cache
+      const cachedImage = imageCache.get(senderId);
+      if (cachedImage && cachedImage.url) {
+        const modifiedEvent = {
+          ...event,
+          message: {
+            ...event.message,
+            attachments: [
+              {
+                type: 'image',
+                payload: { url: cachedImage.url }
+              }
+            ]
+          },
+          _scanImageUrl: cachedImage.url
+        };
+        
+        const scanCommand = commands.get('scan');
+        if (scanCommand) {
+          const words = messageText.split(' ');
+          const args = words.slice(1);
+          await scanCommand.execute(senderId, args, pageAccessToken, modifiedEvent);
+          return;
+        }
+      }
+      
+      // If still no image, proceed normally
+      const scanCommand = commands.get('scan');
+      if (scanCommand) {
+        const words = messageText.split(' ');
+        const args = words.slice(1);
+        await scanCommand.execute(senderId, args, pageAccessToken, event);
+        return;
+      }
     }
   }
 
@@ -116,14 +217,12 @@ const handleMessage = async (event, pageAccessToken) => {
     const firstWord = words[0].toLowerCase();
     const command = commands.get(firstWord);
     
-    // If it's a specific command, execute it
     if (command) {
       const args = words.slice(1);
       await command.execute(senderId, args, pageAccessToken, event);
       return;
     }
     
-    // ========== NEW: Check if the whole text is a scan command ==========
     if (isScanCommand(messageText)) {
       const scanCommand = commands.get('scan');
       if (scanCommand) {
@@ -132,7 +231,6 @@ const handleMessage = async (event, pageAccessToken) => {
       }
     }
     
-    // ========== AUTO-IMAGE ANALYSIS (ai.js) - RETAINED ==========
     console.log('[handleMessage] Auto-analyzing image with caption...');
     const geminiCommand = commands.get('gemini');
     if (geminiCommand) {
@@ -142,7 +240,7 @@ const handleMessage = async (event, pageAccessToken) => {
   }
 
   // ============================================
-  // SCENARIO 3: HAS IMAGE BUT NO TEXT (AUTO) - RETAINED
+  // SCENARIO 3: HAS IMAGE BUT NO TEXT (AUTO)
   // ============================================
   if (hasImage && imageUrl && !messageText) {
     console.log('[handleMessage] Auto-analyzing image with gemini...');
