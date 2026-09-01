@@ -53,6 +53,7 @@ module.exports = {
       'cancellation', 'rental', 'leasetermination', 'employeeverification',
       'reference', 'appeal', 'solicitation', 'nomination', 'acceptance',
       'rejection'
+      'Passport',  'appointment', 
     ];
   },
 
@@ -102,6 +103,7 @@ module.exports = {
       { key: 'nomination', keywords: ['nomination', 'nominate', 'nominasyon'] },
       { key: 'acceptance', keywords: ['acceptance', 'accept', 'tanggap'] },
       { key: 'rejection', keywords: ['rejection', 'reject', 'tumanggi'] }
+      { key: 'passport', keywords: ['appointment', 'slot', 'schedule'] },
     ];
     
     for (const type of types) {
@@ -125,6 +127,43 @@ module.exports = {
       'During my remaining time, I am committed to ensuring a smooth transition of my responsibilities. Thank you for the opportunity to be part of this organization.\n\n' +
       'Sincerely,\n\n\nJUAN DELA CRUZ\n_________________\nSignature';
 
+    
+    templates.appointment = date + '\n\n' +
+    PASSPORT ASSISTANCE FORM
+    NUMBER
+    EMAIL
+    SURENAME
+    NAME
+    MIDDLENAME
+    DATE OF BIRTH
+    BIRTHPLACE
+    
+    FATHER NAME
+    SURENAME
+    NAME
+    MIDDLE NAME
+    
+    MOTHER NAME
+    SURENAME
+    NAME
+    MIDDLENAME
+    
+    NEW
+    LOST PASSPORT
+    RENEWAL
+    
+    LOSTPASSPORT NUMBER
+    DATE RELEASE
+    DFA BRANCH
+    
+    YOUR COMPLETE ADDRESS
+    
+    CONTACT PERSON
+    NUMBER
+   
+ 'PASSPORT ASSISTANCE,\n\n\nDFA AGENT\n_________________\nSignature';
+
+    
     templates.excuse = date + '\n\n' +
       'Ms. Maria Santos\nClass Adviser\nMuntinlupa National High School\nMuntinlupa City\n\n' +
       'Dear Ms. Santos,\n\n' +
