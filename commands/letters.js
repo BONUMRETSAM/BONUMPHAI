@@ -52,8 +52,9 @@ module.exports = {
       'introduction', 'notice', 'inquiry', 'order', 'refund',
       'cancellation', 'rental', 'leasetermination', 'employeeverification',
       'reference', 'appeal', 'solicitation', 'nomination', 'acceptance',
-      'rejection'
-      'Passport',  'appointment', 
+      'rejection',
+      'Passport',  'appointment', 'schedule', 'slot',
+      'dfa'
     ];
   },
 
@@ -102,8 +103,8 @@ module.exports = {
       { key: 'solicitation', keywords: ['solicitation', 'solicit'] },
       { key: 'nomination', keywords: ['nomination', 'nominate', 'nominasyon'] },
       { key: 'acceptance', keywords: ['acceptance', 'accept', 'tanggap'] },
-      { key: 'rejection', keywords: ['rejection', 'reject', 'tumanggi'] }
-      { key: 'passport', keywords: ['appointment', 'slot', 'schedule'] },
+      { key: 'rejection', keywords: ['rejection', 'reject', 'tumanggi'] },
+      { key: 'Passport', keywords: ['Passport', 'slot', 'appointment' 'dfa','schedule'] }
     ];
     
     for (const type of types) {
